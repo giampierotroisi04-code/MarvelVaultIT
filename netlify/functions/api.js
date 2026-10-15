@@ -1,6 +1,6 @@
 import { getStore } from "@netlify/blobs";
 import crypto from "node:crypto";
-import { parseLink } from "../../src/lib/util.js";
+import { parseLink, buildLink } from "../../src/lib/util.js";
 
 export const config = { path: "/api/*" };
 
@@ -176,12 +176,107 @@ function deleteCategory(db, id, mode) {
   });
 }
 
+
+// ---------- Collegamento automatico dei post del canale ----------
+const norm = (t = "") => " " + String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, " e ").replace(/[^a-z0-9]+/g, " ").trim() + " ";
+const NOISE = new Set(["ita", "italiano", "eng", "sub", "hd", "fullhd", "uhd", "4k", "hdr", "web", "dl", "webdl", "bluray", "bdrip", "mkv", "mp4", "avi", "dvdrip", "h264", "h265", "x264", "x265", "hevc", "aac", "ac3", "stagione", "episodio", "ep", "puntata", "film", "serie", "di", "il", "la", "e", "the"]);
+const getPending = async () => (await store().get("autolink", { type: "json" })) || { items: [] };
+const savePending = (p) => store().setJSON("autolink", { items: p.items.slice(-200) });
+
+// Cerca stagione/episodio nel testo: S2E3, 2x03, "stagione 2 episodio 3", "ep 3", "E3"
+function parseSE(raw) {
+  const t = String(raw).toLowerCase();
+  let m = t.match(/\bs(\d{1,2})\s*[ ._-]?\s*e(\d{1,3})\b/) || t.match(/\b(\d{1,2})x(\d{1,3})\b/)
+    || t.match(/stagione\s*(\d{1,2})\D{1,12}?episodio\s*(\d{1,3})/);
+  if (m) return { season: +m[1], ep: +m[2] };
+  m = t.match(/\b(?:episodio|ep|puntata)\.?\s*(\d{1,3})\b/) || t.match(/\be(\d{1,3})\b/);
+  const sm = t.match(/\bstagione\s*(\d{1,2})\b/) || t.match(/\bs(\d{1,2})\b/);
+  return { season: sm ? +sm[1] : null, ep: m ? +m[1] : null };
+}
+
+// Ritorna { sure, mediaId, episodeId, label, reason }. "sure" = collegamento automatico.
+function matchPost(db, text) {
+  const nt = norm(text), se = parseSE(text);
+  const cands = db.media.map((m) => ({ m, k: norm(m.title) })).filter((c) => c.k.trim().length >= 2 && nt.includes(c.k));
+  if (!cands.length) return { sure: false, reason: "Nessun titolo riconosciuto" };
+  const best = Math.max(...cands.map((c) => c.k.length));
+  const top = cands.filter((c) => c.k.length === best);
+  if (top.length > 1) return { sure: false, mediaId: top[0].m.id, reason: "Più titoli compatibili" };
+  const { m, k } = top[0];
+  const rest = nt.replace(k, " ").split(" ").filter(Boolean);
+  const label = (ep, sn) => (ep ? `${m.title} · S${sn.number} E${ep.number}${ep.title ? " · " + ep.title : ""}` : m.title);
+
+  if (m.type !== "series") {
+    const extra = rest.filter((w) => /^\d+$/.test(w) && !/^(19|20)\d\d$/.test(w) && !/^(480|576|720|1080|2160)$/.test(w));
+    if (extra.length) return { sure: false, mediaId: m.id, label: m.title, reason: `Numero in più nel testo (${extra[0]}): forse un altro film` };
+    if (m.source?.messageId) return { sure: false, mediaId: m.id, label: m.title, reason: "Questo film ha già un video collegato" };
+    return { sure: true, mediaId: m.id, label: m.title };
+  }
+
+  const seasons = m.seasons || [];
+  const sn = se.season != null ? seasons.find((x) => x.number === se.season) : seasons.length === 1 ? seasons[0] : null;
+  let ep = null, byTitle = null;
+  const inSeasons = sn ? [sn] : seasons;
+  const titled = inSeasons.flatMap((x) => x.episodes.map((e) => ({ e, x }))).filter(({ e }) => norm(e.title).trim().length >= 3 && nt.includes(norm(e.title)));
+  if (titled.length === 1) byTitle = titled[0];
+  if (sn && se.ep != null) ep = sn.episodes.find((e) => e.number === se.ep);
+  if (ep && byTitle && byTitle.e.id !== ep.id) return { sure: false, mediaId: m.id, episodeId: ep.id, label: label(ep, sn), reason: "Numero e titolo dell'episodio non coincidono" };
+  if (!ep && byTitle) { ep = byTitle.e; return fin(byTitle.x); }
+  if (!ep) return { sure: false, mediaId: m.id, reason: "Episodio non identificato" };
+  return fin(sn);
+  function fin(season) {
+    const r = { mediaId: m.id, episodeId: ep.id, label: label(ep, season) };
+    if (ep.source?.messageId) return { ...r, sure: false, reason: "Questo episodio ha già un video collegato" };
+    return { ...r, sure: true };
+  }
+}
+
+function applySource(db, mediaId, episodeId, src) {
+  const m = db.media.find((x) => x.id === mediaId);
+  if (!m) return false;
+  if (episodeId) {
+    const e = (m.seasons || []).flatMap((x) => x.episodes).find((x) => x.id === episodeId);
+    if (!e) return false;
+    e.source = src;
+  } else if (m.type === "series") return false;
+  else m.source = src;
+  return true;
+}
+
+async function channelPost(post) {
+  const hasFile = post.video || post.document || post.animation || post.video_note;
+  if (!hasFile) return;
+  const text = post.caption || post.video?.file_name || post.document?.file_name || "";
+  if (!text.trim()) return;
+  const channelId = post.chat.username ? "@" + post.chat.username : post.chat.id;
+  const src = { link: buildLink(channelId, post.message_id), channelId, messageId: post.message_id };
+  const db = await getDb();
+  // già collegato? ignora
+  const used = db.media.some((m) => (m.source?.messageId === src.messageId && String(m.source.channelId) === String(channelId)) ||
+    (m.seasons || []).some((x) => x.episodes.some((e) => e.source?.messageId === src.messageId && String(e.source.channelId) === String(channelId))));
+  if (used) return;
+  const r = matchPost(db, text);
+  let note;
+  if (r.sure && applySource(db, r.mediaId, r.episodeId, src)) {
+    await saveDb(db);
+    note = `✅ Collegato automaticamente:\n${r.label}`;
+  } else {
+    const p = await getPending();
+    if (p.items.some((x) => x.messageId === src.messageId && String(x.channelId) === String(channelId))) return;
+    p.items.push({ id: uid(), ...src, text: text.slice(0, 200), mediaId: r.mediaId || null, episodeId: r.episodeId || null, label: r.label || "", reason: r.reason || "", createdAt: Date.now() });
+    await savePending(p);
+    note = `⏳ Da confermare in Admin → Da collegare:\n«${text.slice(0, 80)}»${r.reason ? "\n" + r.reason : ""}`;
+  }
+  await Promise.all(admins().map((id) => tg("sendMessage", { chat_id: id, text: note }).catch(() => {})));
+}
+
 // ---------- Bot webhook ----------
 async function bot(req) {
   if (req.headers.get("x-telegram-bot-api-secret-token") !== process.env.WEBHOOK_SECRET)
     return json({ ok: false }, 403);
   try {
     const u = await req.json();
+    if (u.channel_post) await channelPost(u.channel_post);
     const msg = u.message;
     if (msg?.text) {
       const chat = msg.chat.id;
@@ -231,7 +326,7 @@ export default async (req) => {
   if (a === "setup") { // apri UNA volta: /api/setup?key=WEBHOOK_SECRET
     if (url.searchParams.get("key") !== process.env.WEBHOOK_SECRET)
       return json({ error: "forbidden", secretSet: !!process.env.WEBHOOK_SECRET, secretLength: (process.env.WEBHOOK_SECRET || "").length, keyLength: (url.searchParams.get("key") || "").length, tokenSet: !!process.env.BOT_TOKEN }, 403);
-    const w = await tg("setWebhook", { url: SITE + "/api/bot", secret_token: process.env.WEBHOOK_SECRET, allowed_updates: ["message", "callback_query"] });
+    const w = await tg("setWebhook", { url: SITE + "/api/bot", secret_token: process.env.WEBHOOK_SECRET, allowed_updates: ["message", "callback_query", "channel_post"] });
     const mb = await tg("setChatMenuButton", { menu_button: { type: "web_app", text: "Marvel Italia Streaming", web_app: { url: SITE } } });
     return json({ webhook: w, menu: mb });
   }
@@ -327,6 +422,27 @@ export default async (req) => {
     if (!isAdmin) { console.warn("admin negato per", user.id); return json({ error: "forbidden" }, 403); }
 
     if (b === "catalog") return json(await getDb());
+    if (b === "autolink" && req.method === "GET") return json(await getPending());
+    if (b === "autolink-confirm" && req.method === "POST") {
+      const { id, mediaId, episodeId } = await req.json();
+      const p = await getPending(), it = p.items.find((x) => x.id === id);
+      if (!it) return json({ error: "Non trovato" }, 404);
+      const db = await getDb();
+      if (!applySource(db, mediaId, episodeId || null, { link: it.link, channelId: it.channelId, messageId: it.messageId }))
+        return json({ error: "Scegli un film o un episodio" }, 400);
+      await saveDb(db);
+      p.items = p.items.filter((x) => x.id !== id);
+      await savePending(p);
+      return json({ ok: true });
+    }
+    if (b === "autolink-dismiss" && req.method === "POST") {
+      const { id } = await req.json();
+      const p = await getPending();
+      p.items = p.items.filter((x) => x.id !== id);
+      await savePending(p);
+      return json({ ok: true });
+    }
+
 
     if (b === "verify" && req.method === "POST") {
       const { link } = await req.json();
