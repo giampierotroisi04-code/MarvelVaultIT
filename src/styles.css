@@ -128,3 +128,16 @@ h1,h2,.brand b{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;letter
 .nav{overflow:hidden;padding-top:10px;border-color:rgba(255,255,255,.28);background:rgba(0,0,0,.88)}
 .nav::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--green) 33.3%,#fff 33.3% 66.6%,var(--red) 66.6%)}
 .toast{border-left:6px solid var(--red)}
+
+/* categorie: riquadri grandi, adattivi */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tile{position:relative;aspect-ratio:4/3;display:flex;align-items:flex-end;border:2px solid #fff;border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#1d1d22,#000) center/cover;cursor:pointer}
+.tile:last-child:nth-child(odd){grid-column:1/-1;aspect-ratio:16/8}
+.tile::before{content:"";position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.88),transparent 65%)}
+.tile::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--green) 33.3%,#fff 33.3% 66.6%,var(--red) 66.6%)}
+.tile .tf{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);opacity:.2}
+.tile:active{border-color:var(--red)}
+.tl{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px 12px 14px}
+.tl b{background:var(--red);font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:26px;line-height:1.1;letter-spacing:.04em;text-transform:uppercase;padding:1px 10px;border-radius:3px}
+.tl small{color:#ddd;font-size:12px;font-weight:500}
+.sec.gap{margin-top:24px}

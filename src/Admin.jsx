@@ -147,7 +147,6 @@ function MediaForm({ init, cats, onDone, onCancel }) {
             <input type="checkbox" checked={m.categoryIds?.includes(c.id)} onChange={(e) => set({ categoryIds: e.target.checked ? [...(m.categoryIds || []), c.id] : m.categoryIds.filter((x) => x !== c.id) })} /> {c.emoji} {c.name}
           </label>
         ))}
-        {!cats.length && <small>Nessuna categoria: creale dalla tab Categorie.</small>}
       </div>
 
       {m.type === "movie" ? (
@@ -211,7 +210,6 @@ function Cats({ cats, reload }) {
         </select>
         <Img value={edit.cover} label="Copertina" onChange={(cover) => setEdit({ ...edit, cover })} />
         <div className="row2">
-          <label className="chk"><input type="checkbox" checked={!!edit.showInHome} onChange={(e) => setEdit({ ...edit, showInHome: e.target.checked })} /> Riga in Home</label>
           <label className="chk"><input type="checkbox" checked={edit.visible !== false} onChange={(e) => setEdit({ ...edit, visible: e.target.checked })} /> Visibile</label>
         </div>
         <div className="actions"><button className="btn red" onClick={save}><I.Save size={16} /> Salva</button><button className="btn" onClick={() => setEdit(null)}>Annulla</button></div>
@@ -233,7 +231,6 @@ function Cats({ cats, reload }) {
           </div>
         </div>
       ))}
-      {!list.length && <p className="empty">Nessuna categoria. Creane una!</p>}
     </div>
   );
 }

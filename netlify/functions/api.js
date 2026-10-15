@@ -53,6 +53,18 @@ function keyboard(m, ep) {
   return { inline_keyboard: rows };
 }
 
+// Didascalia: NOME (+ titolo episodio se serie), riga vuota, firma del canale
+const TAIL = "\n\n\u{1F9B8}\u{1F3FB}\u200D\u2642\uFE0F @Marvel_Italia\n#\uFE0F\u20E3 #MarvelStudios #Marvel";
+function captionFor(m, ep) {
+  let head = m.title || "";
+  if (ep) {
+    const season = (m.seasons || []).find((s) => s.episodes.some((e) => e.id === ep.id));
+    const t = (ep.title || "").trim() || `Stagione ${season?.number ?? ""} · Episodio ${ep.number}`;
+    head = `${m.title} - ${t}`;
+  }
+  return head.slice(0, 1024 - TAIL.length) + TAIL;
+}
+
 // copyMessage: il bot (admin del canale) copia il video nella chat dell'utente
 function sendVideo(chatId, m, ep) {
   const src = ep ? ep.source : m.source;
@@ -61,6 +73,7 @@ function sendVideo(chatId, m, ep) {
     chat_id: chatId,
     from_chat_id: src.channelId,
     message_id: src.messageId,
+    caption: captionFor(m, ep),
     protect_content: process.env.PROTECT_CONTENT === "true",
     reply_markup: keyboard(m, ep),
   });

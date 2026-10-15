@@ -19,7 +19,7 @@ function Card({ m, go, seen }) {
     <div className="card" onClick={() => go({ n: "media", id: m.id })}>
       <div className="pw">
         <Poster m={m} />
-        {m.type === "series" && <span className="tag"><I.Tv size={11} /> Serie</span>}
+        <span className="tag">{m.type === "series" ? <I.Tv size={11} /> : <I.Film size={11} />} {m.type === "series" ? "Serie" : "Film"}</span>
         {seen && <span className="seen"><I.Check size={12} /></span>}
       </div>
       <b className="ct">{m.title}</b>
@@ -30,7 +30,7 @@ function Card({ m, go, seen }) {
 const Grid = ({ items, go, user }) =>
   items.length
     ? <div className="grid">{items.map((m) => <Card key={m.id} m={m} go={go} seen={user.watched.includes(m.id)} />)}</div>
-    : <p className="empty">Niente qui, per ora.</p>;
+    : null;
 
 const Rail = ({ title, items, go, user }) =>
   items.length ? (
@@ -42,6 +42,25 @@ const Rail = ({ title, items, go, user }) =>
       <div className="rail">{items.slice(0, 20).map((m) => <Card key={m.id} m={m} go={go} seen={user.watched.includes(m.id)} />)}</div>
     </section>
   ) : null;
+
+function CatTiles({ cats, count, go }) {
+  return (
+    <div className="tiles">
+      {cats.map((c) => {
+        const n = count(c.id);
+        return (
+          <div key={c.id} className="tile" style={c.cover ? { backgroundImage: `url(${imgUrl(c.cover)})` } : {}} onClick={() => go({ n: "cat", id: c.id })}>
+            {!c.cover && <I.Folder size={46} className="tf" />}
+            <div className="tl">
+              <b>{c.emoji} {c.name}</b>
+              {n > 0 && <small>{n} {n === 1 ? "titolo" : "titoli"}</small>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const Header = ({ onSearch }) => (
   <header className="top">
@@ -217,22 +236,13 @@ export default function App() {
             {roots.length > 0 && (
               <section className="blk">
                 <div className="sec"><h2>Categorie</h2></div>
-                <div className="rail">
-                  {roots.map((c) => (
-                    <div key={c.id} className="catc" style={c.cover ? { backgroundImage: `url(${imgUrl(c.cover)})` } : {}} onClick={() => go({ n: "cat", id: c.id })}>
-                      {!c.cover && <I.Folder size={20} />}
-                      <b>{c.emoji} {c.name}</b>
-                    </div>
-                  ))}
-                </div>
+                <CatTiles cats={roots} count={(id) => inCat(id).length} go={go} />
               </section>
             )}
             <Rail title="Ultime uscite" items={recent.slice(0, 12)} go={go} user={user} />
             <Rail title="Film" items={recent.filter((m) => m.type === "movie")} go={go} user={user} />
             <Rail title="Serie TV" items={recent.filter((m) => m.type === "series")} go={go} user={user} />
-            {cats.filter((c) => c.showInHome).map((c) => <Rail key={c.id} title={`${c.emoji || ""} ${c.name}`.trim()} items={inCat(c.id)} go={go} user={user} />)}
             <Rail title="La mia lista" items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} />
-            {!media.length && <p className="empty">Il catalogo è vuoto. Aggiungi contenuti dal pannello Admin.</p>}
           </div>
         </div>
       );
@@ -240,10 +250,17 @@ export default function App() {
     else if (view.n === "coll") body = <div className="page"><h1 className="ptitle">{view.title}</h1><Grid items={media.filter((m) => view.ids.includes(m.id))} go={go} user={user} /></div>;
     else if (view.n === "cat") {
       const c = categories.find((x) => x.id === view.id);
+      const subs = cats.filter((k) => k.parentId === view.id);
+      const direct = media.filter((m) => m.categoryIds?.includes(view.id));
       body = c && (
         <div className="page"><h1 className="ptitle">{c.emoji} {c.name}</h1>
-          <div className="chips">{cats.filter((k) => k.parentId === c.id).map((k) => <button key={k.id} className="chip" onClick={() => go({ n: "cat", id: k.id })}>{k.emoji} {k.name}</button>)}</div>
-          <Grid items={inCat(c.id)} go={go} user={user} />
+          {subs.length > 0 && <CatTiles cats={subs} count={(id) => inCat(id).length} go={go} />}
+          {direct.length > 0 && (
+            <>
+              {subs.length > 0 && <div className="sec gap"><h2>Titoli</h2></div>}
+              <Grid items={direct} go={go} user={user} />
+            </>
+          )}
         </div>
       );
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} />;
