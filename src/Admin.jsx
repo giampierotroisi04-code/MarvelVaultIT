@@ -235,6 +235,68 @@ function Cats({ cats, reload }) {
   );
 }
 
+// ---------- Statistiche ----------
+const when = (ts) => new Date(ts).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const who = (x) => (x.username ? "@" + x.username : x.name || "utente");
+
+function Stats() {
+  const [s, setS] = useState(null);
+  useEffect(() => { api("admin/stats").then(setS); }, []);
+  if (!s) return <p className="hint">Carico…</p>;
+  const max = Math.max(1, ...s.days.map((d) => d.sends));
+  const sub = s.subscription;
+  return (
+    <div>
+      <div className="stat-grid">
+        {[[s.users, "Utenti totali"], [s.activeToday, "Attivi oggi"], [s.active7, "Attivi 7 giorni"], [s.newToday, "Nuovi oggi"],
+          [s.sendsToday, "Video inviati oggi"], [s.sends7, "Video 7 giorni"], [s.sendsTotal, "Video totali"], [`${s.openRequests} / ${s.openReports}`, "Richieste / segnalazioni aperte"]]
+          .map(([n, l]) => <div className="stat" key={l}><b>{n}</b><small>{l}</small></div>)}
+      </div>
+      <h2 className="sub">Video inviati, ultimi 7 giorni</h2>
+      <div className="bars">
+        {s.days.map((d) => (
+          <div key={d.d} className="bcol"><span>{d.sends}</span><i style={{ height: 6 + (d.sends / max) * 70 }} /><small>{d.d.slice(8)}/{d.d.slice(5, 7)}</small></div>
+        ))}
+      </div>
+      <h2 className="sub">Più guardati</h2>
+      {s.top.map((t, i) => <div className="item" key={t.id}><b>{i + 1}. {t.title}</b> <small>{t.sends} invii</small></div>)}
+      <h2 className="sub">Iscrizione obbligatoria</h2>
+      <div className="box">
+        {sub.state === "off" && "Non attiva. Imposta REQUIRED_CHANNEL su Netlify per attivarla."}
+        {sub.state === "ok" && `Attiva su ${sub.channel}. Il controllo funziona.`}
+        {sub.state === "error" && `Controllo non funzionante: ${sub.detail}. Aggiungi il bot come amministratore del canale ${sub.channel}.`}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Richieste e segnalazioni ----------
+function Inbox({ kind }) {
+  const [d, setD] = useState(null);
+  const load = () => api("admin/inbox").then(setD);
+  useEffect(() => { load(); }, []);
+  if (!d) return <p className="hint">Carico…</p>;
+  const list = [...(kind === "report" ? d.reports : d.requests)].sort((a, b) => (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1) || b.createdAt - a.createdAt);
+  const toggleDone = async (it) => { await api("admin/inbox/status", { body: { kind, id: it.id, status: it.status === "done" ? "open" : "done" } }); load(); };
+  const del = async (it) => { if (await ask("Eliminare?")) { await api(`admin/inbox/${kind}/${it.id}`, { method: "DELETE" }); load(); } };
+  return (
+    <>
+      {list.map((it) => (
+        <div className={"item" + (it.status === "done" ? " done" : "")} key={it.id}>
+          {kind === "request"
+            ? <b>{it.text}</b>
+            : <><b>{it.title}{it.episodeLabel ? ` · ${it.episodeLabel}` : ""}</b><div className="hint">{d.reasons[it.reason]}{it.note ? ` — ${it.note}` : ""}</div></>}
+          <small>{who(it)} · {when(it.createdAt)}</small>
+          <div className="actions">
+            <button className="btn small" onClick={() => toggleDone(it)}><I.Check size={16} /> {it.status === "done" ? "Riapri" : kind === "report" ? "Risolto" : "Aggiunto"}</button>
+            <button className="btn small" onClick={() => del(it)}><I.Trash size={16} /></button>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 // ---------- Pannello ----------
 export default function Admin({ say, onChange }) {
   const [tab, setTab] = useState("media");
@@ -253,8 +315,11 @@ export default function Admin({ say, onChange }) {
       <div className="chips">
         <button className={"chip" + (tab === "media" ? " on" : "")} onClick={() => setTab("media")}>Contenuti</button>
         <button className={"chip" + (tab === "cats" ? " on" : "")} onClick={() => setTab("cats")}>Categorie</button>
+        <button className={"chip" + (tab === "requests" ? " on" : "")} onClick={() => setTab("requests")}>Richieste</button>
+        <button className={"chip" + (tab === "reports" ? " on" : "")} onClick={() => setTab("reports")}>Segnalazioni</button>
+        <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
-      {tab === "cats" ? <Cats cats={db.categories} reload={reload} /> : (
+      {tab === "cats" ? <Cats cats={db.categories} reload={reload} /> : tab === "stats" ? <Stats /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
           {[...db.media].sort((a, b) => b.createdAt - a.createdAt).map((m) => (
