@@ -253,7 +253,9 @@ export default function App() {
       const subs = cats.filter((k) => k.parentId === view.id);
       const direct = media.filter((m) => m.categoryIds?.includes(view.id));
       body = c && (
-        <div className="page"><h1 className="ptitle">{c.emoji} {c.name}</h1>
+        <div className="page">
+          <button className="btn small" style={{ marginBottom: 12 }} onClick={back}><I.Chevron size={16} style={{ transform: "rotate(180deg)" }} /> Indietro</button>
+          <div><h1 className="ptitle">{c.emoji} {c.name}</h1></div>
           {subs.length > 0 && <CatTiles cats={subs} count={(id) => inCat(id).length} go={go} />}
           {direct.length > 0 && (
             <>

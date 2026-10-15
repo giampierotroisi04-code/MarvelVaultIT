@@ -141,3 +141,10 @@ h1,h2,.brand b{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;letter
 .tl b{background:var(--red);font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:26px;line-height:1.1;letter-spacing:.04em;text-transform:uppercase;padding:1px 10px;border-radius:3px}
 .tl small{color:#ddd;font-size:12px;font-weight:500}
 .sec.gap{margin-top:24px}
+
+/* fix: il titolo non si sovrappone più al banner */
+.dhero{height:240px}
+.dbody{margin-top:0;padding-top:18px}
+.hin h1{font-size:clamp(34px,11vw,54px)}
+.dtitle{font-size:clamp(32px,10vw,46px)}
+.hin h1,.dtitle,.ptitle{overflow-wrap:anywhere}
