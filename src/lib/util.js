@@ -27,3 +27,17 @@ export const descIds = (cats, id) => [
   id,
   ...cats.filter((c) => c.parentId === id).flatMap((c) => descIds(cats, c.id)),
 ];
+
+// Data di uscita per l'ordinamento: giorno e mese contano solo a parità di anno,
+// ma non vengono mai mostrati (all'utente si vede solo l'anno).
+export const relKey = (m) => m?.releaseDate || (m?.year ? `${String(m.year).slice(0, 4)}-00-00` : "");
+// asc: dal più vecchio; desc: dal più recente. Senza data -> in fondo.
+export const byRelease = (dir = "asc") => (a, b) => {
+  const x = relKey(a), y = relKey(b);
+  if (x !== y) {
+    if (!x) return 1;
+    if (!y) return -1;
+    return dir === "asc" ? (x < y ? -1 : 1) : (x < y ? 1 : -1);
+  }
+  return (a.createdAt || 0) - (b.createdAt || 0);
+};
