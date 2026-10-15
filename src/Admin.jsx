@@ -130,7 +130,7 @@ function MediaForm({ init, cats, onDone, onCancel }) {
     if (!m.title.trim()) return alert("Inserisci un titolo");
     const bad = [m.source, ...(m.seasons || []).flatMap((s) => s.episodes.map((e) => e.source))].some((x) => x?.link && !x.messageId);
     if (bad) return alert("C'è un link non valido");
-    await api("admin/media", { body: m });
+    try { await api("admin/media", { body: m }); } catch (e) { return alert(e.data?.error || "Errore nel salvataggio"); }
     onDone();
   };
 
@@ -349,11 +349,18 @@ function Inbox({ kind }) {
 // ---------- Da collegare (post del canale non riconosciuti con certezza) ----------
 function AutoLink({ media, onDone }) {
   const [items, setItems] = useState(null);
+  const [recent, setRecent] = useState([]);
   const [pick, setPick] = useState({}); // id -> { mediaId, episodeId }
-  const load = () => api("admin/autolink").then((d) => { setItems(d.items); setPick(Object.fromEntries(d.items.map((x) => [x.id, { mediaId: x.mediaId || "", episodeId: x.episodeId || "" }]))); });
+  const load = () => api("admin/autolink").then((d) => { setRecent(d.recent || []); setItems(d.items); setPick(Object.fromEntries(d.items.map((x) => [x.id, { mediaId: x.mediaId || "", episodeId: x.episodeId || "" }]))); });
   useEffect(() => { load(); }, []);
   if (!items) return <p className="hint">Carico…</p>;
-  if (!items.length) return <p className="hint">Nessun post da confermare 🎉</p>;
+  const log = recent.length > 0 && (
+    <>
+      <h2 className="sub">Collegati di recente</h2>
+      {[...recent].reverse().map((r, i) => <div className="item" key={i}><b>{r.saved === false ? "⚠️ " : "✅ "}{r.label}</b><small>{when(r.at)} · <a href={r.link} target="_blank" rel="noreferrer">post</a></small></div>)}
+    </>
+  );
+  if (!items.length) return <><p className="hint">Nessun post da confermare 🎉</p>{log}</>;
   const epsOf = (mid) => { const m = media.find((x) => x.id === mid); return m?.type === "series" ? [...(m.seasons || [])].sort((a, b) => a.number - b.number).flatMap((s) => [...s.episodes].sort((a, b) => a.number - b.number).map((e) => ({ id: e.id, t: `S${s.number} E${e.number}${e.title ? " · " + e.title : ""}${e.source ? " (già collegato)" : ""}` }))) : null; };
   const set = (id, p) => setPick({ ...pick, [id]: { ...pick[id], ...p } });
   const confirm = async (it) => { try { await api("admin/autolink-confirm", { body: { id: it.id, ...pick[it.id] } }); await load(); onDone?.(); } catch (e) { alert(e.data?.error || "Errore"); } };
@@ -384,6 +391,7 @@ function AutoLink({ media, onDone }) {
           </div>
         );
       })}
+      {log}
     </>
   );
 }
