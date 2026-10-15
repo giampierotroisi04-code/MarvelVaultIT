@@ -378,6 +378,7 @@ export default async (req) => {
         cover: body.cover || "",
         showInHome: !!body.showInHome,
         visible: body.visible !== false,
+        mediaOrder: Array.isArray(body.mediaOrder) ? body.mediaOrder.filter((x) => typeof x === "string") : (i >= 0 ? db.categories[i].mediaOrder || [] : []),
         order: i >= 0 ? db.categories[i].order : Math.max(0, ...db.categories.map((x) => x.order || 0)) + 1,
       };
       i >= 0 ? (db.categories[i] = cat) : db.categories.push(cat);
