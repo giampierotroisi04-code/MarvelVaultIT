@@ -180,8 +180,8 @@ function deleteCategory(db, id, mode) {
 // ---------- Collegamento automatico dei post del canale ----------
 const norm = (t = "") => " " + String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, " e ").replace(/[^a-z0-9]+/g, " ").trim() + " ";
 const NOISE = new Set(["ita", "italiano", "eng", "sub", "hd", "fullhd", "uhd", "4k", "hdr", "web", "dl", "webdl", "bluray", "bdrip", "mkv", "mp4", "avi", "dvdrip", "h264", "h265", "x264", "x265", "hevc", "aac", "ac3", "stagione", "episodio", "ep", "puntata", "film", "serie", "di", "il", "la", "e", "the"]);
-const getPending = async () => (await store().get("autolink", { type: "json" })) || { items: [] };
-const savePending = (p) => store().setJSON("autolink", { items: p.items.slice(-200) });
+const getPending = async () => { const d = (await store().get("autolink", { type: "json" })) || {}; return { items: d.items || [], recent: d.recent || [] }; };
+const savePending = (p) => store().setJSON("autolink", { items: p.items.slice(-200), recent: (p.recent || []).slice(-15) });
 
 // Cerca stagione/episodio nel testo: S2E3, 2x03, "stagione 2 episodio 3", "ep 3", "E3"
 function parseSE(raw) {
@@ -240,6 +240,7 @@ function applySource(db, mediaId, episodeId, src) {
     e.source = src;
   } else if (m.type === "series") return false;
   else m.source = src;
+  m.rev = (m.rev || 0) + 1; // serve a bloccare salvataggi fatti da schede aperte prima del collegamento
   return true;
 }
 
@@ -259,7 +260,12 @@ async function channelPost(post) {
   let note;
   if (r.sure && applySource(db, r.mediaId, r.episodeId, src)) {
     await saveDb(db);
-    note = `✅ Collegato automaticamente:\n${r.label}`;
+    const chk = await getDb(), mm = chk.media.find((x) => x.id === r.mediaId);
+    const saved = r.episodeId ? (mm?.seasons || []).some((x) => x.episodes.some((e) => e.id === r.episodeId && e.source?.messageId === src.messageId)) : mm?.source?.messageId === src.messageId;
+    const p = await getPending();
+    p.recent.push({ label: r.label, link: src.link, at: Date.now(), saved });
+    await savePending(p);
+    note = saved ? `✅ Collegato e salvato:\n${r.label}` : `⚠️ Collegato ma NON salvato:\n${r.label}`;
   } else {
     const p = await getPending();
     if (p.items.some((x) => x.messageId === src.messageId && String(x.channelId) === String(channelId))) return;
@@ -461,8 +467,11 @@ export default async (req) => {
       const body = await req.json();
       const db = await getDb();
       const i = db.media.findIndex((x) => x.id === body.id);
+      if (i >= 0 && (db.media[i].rev || 0) !== (body.rev || 0))
+        return json({ error: "Questo contenuto è cambiato (collegamento automatico di un video). Chiudi la scheda e riaprila prima di salvare." }, 409);
       const m = {
         ...body,
+        rev: (i >= 0 ? db.media[i].rev || 0 : 0) + 1,
         id: body.id || uid(),
         createdAt: i >= 0 ? db.media[i].createdAt : Date.now(),
         categoryIds: body.categoryIds || [],
