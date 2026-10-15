@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, imgUrl, art } from "./api.js";
-import { descIds } from "./lib/util.js";
+import { descIds, byRelease } from "./lib/util.js";
 import { I } from "./Icons.jsx";
 import Admin from "./Admin.jsx";
 import logo from "./logo.jpg";
@@ -165,7 +165,7 @@ function Detail({ m, user, watch, toggle, say }) {
             {season && [...season.episodes].sort(byNum).map((e) => (
               <div className="ep" key={e.id}>
                 <div className="thumb" onClick={() => e.hasVideo && watch(m.id, e.id)}>
-                  {e.cover ? <img src={imgUrl(e.cover)} alt="" loading="lazy" /> : <div className="ph"><I.Film size={22} /></div>}
+                  {e.cover || e.coverUrl ? <img src={imgUrl(e.cover) || e.coverUrl} alt="" loading="lazy" /> : <div className="ph"><I.Film size={22} /></div>}
                   {e.hasVideo && <span className="pl"><I.Play size={16} /></span>}
                   {seen(e.id) && <span className="seen"><I.Check size={12} /></span>}
                 </div>
@@ -272,7 +272,7 @@ export default function App() {
 
   const cats = [...categories].sort((a, b) => (a.order || 0) - (b.order || 0));
   const inCat = (id) => { const ids = descIds(categories, id); return media.filter((m) => m.categoryIds?.some((c) => ids.includes(c))); };
-  const recent = [...media].sort((a, b) => b.createdAt - a.createdAt);
+  const recent = [...media].sort(byRelease("desc"));
   const find = (id) => media.find((m) => m.id === id);
 
   let body = null;
@@ -335,11 +335,11 @@ export default function App() {
         </div>
       );
     } else if (view.n === "media" && find(view.id)) body = <Detail m={find(view.id)} user={user} watch={watch} toggle={toggle} say={say} />;
-    else if (view.n === "coll") body = <div className="page"><h1 className="ptitle">{view.title}</h1><Grid items={media.filter((m) => view.ids.includes(m.id))} go={go} user={user} /></div>;
+    else if (view.n === "coll") body = <div className="page"><h1 className="ptitle">{view.title}</h1><Grid items={media.filter((m) => view.ids.includes(m.id)).sort(byRelease("asc"))} go={go} user={user} /></div>;
     else if (view.n === "cat") {
       const c = categories.find((x) => x.id === view.id);
       const subs = cats.filter((k) => k.parentId === view.id);
-      const direct = media.filter((m) => m.categoryIds?.includes(view.id));
+      const direct = media.filter((m) => m.categoryIds?.includes(view.id)).sort(byRelease("asc"));
       body = c && (
         <div className="page">
           <button className="btn small" style={{ marginBottom: 12 }} onClick={back}><I.Chevron size={16} style={{ transform: "rotate(180deg)" }} /> Indietro</button>

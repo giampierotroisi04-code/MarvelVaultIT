@@ -39,7 +39,7 @@ function Img({ value, url, onChange, label = "Immagine" }) {
 }
 
 // ---------- Stagione con episodi ----------
-function SeasonBlock({ s, up, delSeason, verify }) {
+function SeasonBlock({ s, up, delSeason, verify, tmdbId, say }) {
   const [r, setR] = useState({ a: "", b: "" });
   const eps = [...s.episodes].sort((x, y) => x.number - y.number);
   const upEp = (id, p) => up({ episodes: s.episodes.map((e) => (e.id === id ? { ...e, ...p } : e)) });
@@ -55,6 +55,23 @@ function SeasonBlock({ s, up, delSeason, verify }) {
     up({ episodes: [...s.episodes, ...eps2] });
     setR({ a: "", b: "" });
   };
+  // Importa titolo, descrizione e immagine degli episodi da TMDB (compila solo i campi vuoti, non tocca i link)
+  const importTmdb = async () => {
+    if (!tmdbId) return alert("Prima cerca la serie con il bottone TMDB e selezionala");
+    try {
+      const { episodes } = await api(`admin/tmdb-season?id=${tmdbId}&season=${s.number}`);
+      const have = new Map(s.episodes.map((e) => [e.number, e]));
+      const merged = s.episodes.map((e) => {
+        const t = episodes.find((x) => x.number === e.number);
+        if (!t) return e;
+        return { ...e, title: e.title || t.title, overview: e.overview || t.overview, coverUrl: e.cover ? e.coverUrl : t.coverUrl || e.coverUrl };
+      });
+      // se la stagione è vuota crea gli episodi (senza video collegato)
+      const created = s.episodes.length ? [] : episodes.filter((t) => !have.has(t.number)).map((t) => ({ id: uid(), number: t.number, title: t.title, overview: t.overview, cover: "", coverUrl: t.coverUrl, visible: true, source: null }));
+      up({ episodes: [...merged, ...created] });
+      say?.(`Importati ${episodes.length} episodi da TMDB`);
+    } catch (e) { alert(e.data?.error || "Import TMDB non riuscito"); }
+  };
   return (
     <div className="box">
       <div className="row2">
@@ -63,6 +80,7 @@ function SeasonBlock({ s, up, delSeason, verify }) {
         <button className="btn small" onClick={delSeason}><I.Trash size={16} /></button>
       </div>
       <Img value={s.cover} label="Copertina stagione" onChange={(cover) => up({ cover })} />
+      <button className="btn small" onClick={importTmdb}>Importa episodi da TMDB</button>
       {eps.map((e) => (
         <div className="ep-edit" key={e.id}>
           <div className="row2">
@@ -70,7 +88,7 @@ function SeasonBlock({ s, up, delSeason, verify }) {
             <input className="in" placeholder="Titolo episodio" value={e.title} onChange={(ev) => upEp(e.id, { title: ev.target.value })} />
           </div>
           <textarea className="in" rows={2} placeholder="Descrizione" value={e.overview || ""} onChange={(ev) => upEp(e.id, { overview: ev.target.value })} />
-          <Img value={e.cover} label="Immagine episodio" onChange={(cover) => upEp(e.id, { cover })} />
+          <Img value={e.cover} url={e.coverUrl} label="Immagine episodio" onChange={(cover) => upEp(e.id, { cover })} />
           <input className="in" placeholder="Link messaggio del canale" value={e.source?.link || ""} onChange={(ev) => upEp(e.id, { source: ev.target.value ? srcFrom(ev.target.value) : null })} />
           <div className="row2">
             <button className="btn small" onClick={() => verify(e.source?.link)}><I.Eye size={16} /> Verifica</button>
@@ -122,13 +140,14 @@ function MediaForm({ init, cats, onDone, onCancel }) {
       <div className="row2">
         <select className="in" value={m.type} onChange={(e) => setType(e.target.value)}><option value="movie">Film</option><option value="series">Serie TV</option></select>
         <input className="in sm" placeholder="Anno" value={m.year || ""} onChange={(e) => set({ year: e.target.value })} />
+        <input className="in" type="date" title="Data di uscita (solo per l'ordinamento, non visibile agli utenti)" value={m.releaseDate || ""} onChange={(e) => set({ releaseDate: e.target.value, year: e.target.value ? e.target.value.slice(0, 4) : m.year })} />
       </div>
       <div className="row2">
         <input className="in" placeholder="Titolo" value={m.title} onChange={(e) => set({ title: e.target.value })} />
         <button className="btn small" onClick={tmdb}>TMDB</button>
       </div>
       {res.map((r, i) => (
-        <button key={i} className="btn tmdb" onClick={() => { set({ title: r.title, year: r.year, overview: r.overview, posterUrl: r.posterUrl, backdropUrl: r.backdropUrl, type: r.type, seasons: r.type === "series" && !m.seasons?.length ? [newSeason()] : m.seasons }); setRes([]); }}>
+        <button key={i} className="btn tmdb" onClick={() => { set({ title: r.title, year: r.year, releaseDate: r.releaseDate, tmdbId: r.tmdbId, overview: r.overview, posterUrl: r.posterUrl, backdropUrl: r.backdropUrl, type: r.type, seasons: r.type === "series" && !m.seasons?.length ? [newSeason()] : m.seasons }); setRes([]); }}>
           {r.title} ({r.year}) · {r.type === "movie" ? "Film" : "Serie"}
         </button>
       ))}
@@ -159,7 +178,7 @@ function MediaForm({ init, cats, onDone, onCancel }) {
         <>
           <h2>Stagioni ed episodi</h2>
           {[...(m.seasons || [])].sort((a, b) => a.number - b.number).map((s) => (
-            <SeasonBlock key={s.id} s={s} up={(p) => upSeason(s.id, p)} verify={verify}
+            <SeasonBlock key={s.id} s={s} up={(p) => upSeason(s.id, p)} verify={verify} tmdbId={m.tmdbId} say={setMsg}
               delSeason={async () => (await ask("Eliminare la stagione?")) && set({ seasons: m.seasons.filter((x) => x.id !== s.id) })} />
           ))}
           <button className="btn small" onClick={() => set({ seasons: [...(m.seasons || []), newSeason()] })}><I.Plus size={16} /> Stagione</button>
