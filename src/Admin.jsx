@@ -346,6 +346,48 @@ function Inbox({ kind }) {
   );
 }
 
+// ---------- Da collegare (post del canale non riconosciuti con certezza) ----------
+function AutoLink({ media, onDone }) {
+  const [items, setItems] = useState(null);
+  const [pick, setPick] = useState({}); // id -> { mediaId, episodeId }
+  const load = () => api("admin/autolink").then((d) => { setItems(d.items); setPick(Object.fromEntries(d.items.map((x) => [x.id, { mediaId: x.mediaId || "", episodeId: x.episodeId || "" }]))); });
+  useEffect(() => { load(); }, []);
+  if (!items) return <p className="hint">Carico…</p>;
+  if (!items.length) return <p className="hint">Nessun post da confermare 🎉</p>;
+  const epsOf = (mid) => { const m = media.find((x) => x.id === mid); return m?.type === "series" ? [...(m.seasons || [])].sort((a, b) => a.number - b.number).flatMap((s) => [...s.episodes].sort((a, b) => a.number - b.number).map((e) => ({ id: e.id, t: `S${s.number} E${e.number}${e.title ? " · " + e.title : ""}${e.source ? " (già collegato)" : ""}` }))) : null; };
+  const set = (id, p) => setPick({ ...pick, [id]: { ...pick[id], ...p } });
+  const confirm = async (it) => { try { await api("admin/autolink-confirm", { body: { id: it.id, ...pick[it.id] } }); await load(); onDone?.(); } catch (e) { alert(e.data?.error || "Errore"); } };
+  const dismiss = async (it) => { await api("admin/autolink-dismiss", { body: { id: it.id } }); load(); };
+  return (
+    <>
+      {items.map((it) => {
+        const p = pick[it.id] || {}, eps = epsOf(p.mediaId);
+        return (
+          <div className="item" key={it.id}>
+            <b>{it.text}</b>
+            <div className="hint">{it.reason}{it.label ? ` — Suggerito: ${it.label}` : ""}</div>
+            <small>{when(it.createdAt)} · <a href={it.link} target="_blank" rel="noreferrer">apri post</a></small>
+            <select className="in" value={p.mediaId} onChange={(e) => set(it.id, { mediaId: e.target.value, episodeId: "" })}>
+              <option value="">— Scegli titolo —</option>
+              {[...media].sort((a, b) => a.title.localeCompare(b.title)).map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
+            </select>
+            {eps && (
+              <select className="in" value={p.episodeId} onChange={(e) => set(it.id, { episodeId: e.target.value })}>
+                <option value="">— Scegli episodio —</option>
+                {eps.map((e) => <option key={e.id} value={e.id}>{e.t}</option>)}
+              </select>
+            )}
+            <div className="actions">
+              <button className="btn small red" onClick={() => confirm(it)}><I.Check size={16} /> Conferma</button>
+              <button className="btn small" onClick={() => dismiss(it)}><I.Trash size={16} /> Scarta</button>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 // ---------- Pannello ----------
 export default function Admin({ say, onChange }) {
   const [tab, setTab] = useState("media");
@@ -364,11 +406,12 @@ export default function Admin({ say, onChange }) {
       <div className="chips">
         <button className={"chip" + (tab === "media" ? " on" : "")} onClick={() => setTab("media")}>Contenuti</button>
         <button className={"chip" + (tab === "cats" ? " on" : "")} onClick={() => setTab("cats")}>Categorie</button>
+        <button className={"chip" + (tab === "autolink" ? " on" : "")} onClick={() => setTab("autolink")}>Da collegare</button>
         <button className={"chip" + (tab === "requests" ? " on" : "")} onClick={() => setTab("requests")}>Richieste</button>
         <button className={"chip" + (tab === "reports" ? " on" : "")} onClick={() => setTab("reports")}>Segnalazioni</button>
         <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
-      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <Stats /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
+      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <Stats /> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
           {[...db.media].sort((a, b) => b.createdAt - a.createdAt).map((m) => (
