@@ -58,9 +58,12 @@ const TAIL = "\n\n\u{1F9B8}\u{1F3FB}\u200D\u2642\uFE0F @Marvel_Italia\n#\uFE0F\u
 function captionFor(m, ep) {
   let head = m.title || "";
   if (ep) {
-    const season = (m.seasons || []).find((s) => s.episodes.some((e) => e.id === ep.id));
-    const t = (ep.title || "").trim() || `Stagione ${season?.number ?? ""} · Episodio ${ep.number}`;
-    head = `${m.title} - ${t}`;
+    const seasons = m.seasons || [];
+    const season = seasons.find((s) => s.episodes.some((e) => e.id === ep.id));
+    // stagione mostrata solo se la serie ne ha più di una
+    const num = seasons.length > 1 && season ? `S${season.number} · E${ep.number}` : `E${ep.number}`;
+    const t = (ep.title || "").trim();
+    head = `${m.title} - ${num}${t ? " · " + t : ""}`;
   }
   return head.slice(0, 1024 - TAIL.length) + TAIL;
 }
@@ -464,12 +467,37 @@ export default async (req) => {
       return json({
         results: (r.results || []).filter((x) => x.media_type === "movie" || x.media_type === "tv").slice(0, 8).map((x) => ({
           title: x.title || x.name,
+          tmdbId: x.id,
+          releaseDate: x.release_date || x.first_air_date || "",
           year: (x.release_date || x.first_air_date || "").slice(0, 4),
           overview: x.overview,
           type: x.media_type === "movie" ? "movie" : "series",
           posterUrl: img(x.poster_path, "w500"),
           backdropUrl: img(x.backdrop_path, "w780"),
         })),
+      });
+    }
+
+    if (b === "tmdb-season") {
+      const key = process.env.TMDB_API_KEY;
+      if (!key) return json({ error: "TMDB non configurato" }, 400);
+      const id = encodeURIComponent(url.searchParams.get("id") || "");
+      const n = encodeURIComponent(url.searchParams.get("season") || "1");
+      const get = (lang) => fetch(`https://api.themoviedb.org/3/tv/${id}/season/${n}?api_key=${key}&language=${lang}`).then((x) => x.json());
+      const [it, en] = await Promise.all([get("it-IT"), get("en-US")]);
+      if (!it.episodes && !en.episodes) return json({ error: "Stagione non trovata su TMDB" }, 404);
+      const enBy = new Map((en.episodes || []).map((e) => [e.episode_number, e]));
+      return json({
+        episodes: (it.episodes || en.episodes).map((e) => {
+          const f = enBy.get(e.episode_number) || {};
+          return {
+            number: e.episode_number,
+            title: e.name || f.name || "",
+            overview: e.overview || f.overview || "", // fallback in inglese se manca in italiano
+            coverUrl: e.still_path || f.still_path ? `https://image.tmdb.org/t/p/w780${e.still_path || f.still_path}` : "",
+            airDate: e.air_date || "",
+          };
+        }),
       });
     }
   }
