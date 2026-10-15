@@ -6,6 +6,7 @@ import Admin from "./Admin.jsx";
 import logo from "./logo.jpg";
 
 const tg = window.Telegram?.WebApp;
+const catSort = (c) => { const o = c?.mediaOrder || []; const rel = byRelease("asc"); return (a, b) => { const x = o.indexOf(a.id), y = o.indexOf(b.id); return x >= 0 && y >= 0 ? x - y : x >= 0 ? -1 : y >= 0 ? 1 : rel(a, b); }; };
 const byNum = (a, b) => (a.number || 0) - (b.number || 0);
 const kind = (m) => (m.type === "movie" ? "Film" : "Serie TV");
 
@@ -339,7 +340,7 @@ export default function App() {
     else if (view.n === "cat") {
       const c = categories.find((x) => x.id === view.id);
       const subs = cats.filter((k) => k.parentId === view.id);
-      const direct = media.filter((m) => m.categoryIds?.includes(view.id)).sort(byRelease("asc"));
+      const direct = media.filter((m) => m.categoryIds?.includes(view.id)).sort(catSort(c));
       body = c && (
         <div className="page">
           <button className="btn small" style={{ marginBottom: 12 }} onClick={back}><I.Chevron size={16} style={{ transform: "rotate(180deg)" }} /> Indietro</button>

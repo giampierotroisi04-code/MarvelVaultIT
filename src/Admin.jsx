@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, imgUrl } from "./api.js";
 import { I } from "./Icons.jsx";
-import { parseLink, buildLink, flatTree, descIds } from "./lib/util.js";
+import { parseLink, buildLink, flatTree, descIds, byRelease } from "./lib/util.js";
 
 const tg = window.Telegram?.WebApp;
 const uid = () => Math.random().toString(16).slice(2, 12);
@@ -191,7 +191,7 @@ function MediaForm({ init, cats, onDone, onCancel }) {
 }
 
 // ---------- Categorie ----------
-function Cats({ cats, reload }) {
+function Cats({ cats, media = [], reload }) {
   const [edit, setEdit] = useState(null);
   const list = flatTree(cats);
   const save = async () => { if (!edit.name?.trim()) return alert("Nome mancante"); await api("admin/category", { body: edit }); setEdit(null); reload(); };
@@ -214,6 +214,21 @@ function Cats({ cats, reload }) {
     reload();
   };
 
+  // titoli della categoria nell'ordine attuale: prima quelli ordinati a mano, poi per anno
+  const orderedIn = (c) => {
+    const o = c.mediaOrder || [], rel = byRelease("asc");
+    return media.filter((m) => m.categoryIds?.includes(c.id)).sort((a, b) => {
+      const x = o.indexOf(a.id), y = o.indexOf(b.id);
+      return x >= 0 && y >= 0 ? x - y : x >= 0 ? -1 : y >= 0 ? 1 : rel(a, b);
+    });
+  };
+  const moveTitle = (id, dir) => {
+    const ids = orderedIn(edit).map((m) => m.id), i = ids.indexOf(id), j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    setEdit({ ...edit, mediaOrder: ids });
+  };
+
   if (edit) {
     const ban = new Set(edit.id ? descIds(cats, edit.id) : []);
     return (
@@ -231,6 +246,21 @@ function Cats({ cats, reload }) {
         <div className="row2">
           <label className="chk"><input type="checkbox" checked={edit.visible !== false} onChange={(e) => setEdit({ ...edit, visible: e.target.checked })} /> Visibile</label>
         </div>
+        {edit.id && (
+          <>
+            <h2 className="sub">Ordine dei titoli</h2>
+            {orderedIn(edit).map((m) => (
+              <div className="item" key={m.id}>
+                <b>{m.title}</b> <small>{m.year}</small>
+                <div className="actions">
+                  <button className="btn small" onClick={() => moveTitle(m.id, -1)}><I.ArrowUp size={16} /></button>
+                  <button className="btn small" onClick={() => moveTitle(m.id, 1)}><I.ArrowDown size={16} /></button>
+                </div>
+              </div>
+            ))}
+            {(edit.mediaOrder?.length > 0) && <button className="btn small" onClick={() => setEdit({ ...edit, mediaOrder: [] })}>Ripristina ordine per anno</button>}
+          </>
+        )}
         <div className="actions"><button className="btn red" onClick={save}><I.Save size={16} /> Salva</button><button className="btn" onClick={() => setEdit(null)}>Annulla</button></div>
       </div>
     );
@@ -338,7 +368,7 @@ export default function Admin({ say, onChange }) {
         <button className={"chip" + (tab === "reports" ? " on" : "")} onClick={() => setTab("reports")}>Segnalazioni</button>
         <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
-      {tab === "cats" ? <Cats cats={db.categories} reload={reload} /> : tab === "stats" ? <Stats /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
+      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <Stats /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
           {[...db.media].sort((a, b) => b.createdAt - a.createdAt).map((m) => (
