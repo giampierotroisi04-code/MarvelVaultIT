@@ -407,6 +407,7 @@ function AutoLink({ media, onDone }) {
   const epsOf = (mid) => { const m = media.find((x) => x.id === mid); return m?.type === "series" ? [...(m.seasons || [])].sort((a, b) => a.number - b.number).flatMap((s) => [...s.episodes].sort((a, b) => a.number - b.number).map((e) => ({ id: e.id, t: `S${s.number} E${e.number}${e.title ? " · " + e.title : ""}${e.source ? " (già collegato)" : ""}` }))) : null; };
   const set = (id, p) => setPick({ ...pick, [id]: { ...pick[id], ...p } });
   const confirm = async (it) => { try { await api("admin/autolink-confirm", { body: { id: it.id, ...pick[it.id] } }); await load(); onDone?.(); } catch (e) { alert(e.data?.error || "Errore"); } };
+  const createTmdb = async (it) => { try { await api("admin/autolink-confirm", { body: { id: it.id, createFromTmdb: true } }); await load(); onDone?.(); } catch (e) { alert(e.data?.error || "Errore"); } };
   const dismiss = async (it) => { await api("admin/autolink-dismiss", { body: { id: it.id } }); load(); };
   return (
     <>
@@ -427,6 +428,12 @@ function AutoLink({ media, onDone }) {
                 <option value="">— Scegli episodio —</option>
                 {eps.map((e) => <option key={e.id} value={e.id}>{e.t}</option>)}
               </select>
+            )}
+            {it.tmdbSuggest && (
+              <div className="hint">
+                Suggerito da TMDB: <b>{it.tmdbSuggest.name}</b> {it.tmdbSuggest.year && `(${it.tmdbSuggest.year})`}
+                <button className="btn small red" onClick={() => createTmdb(it)}>Crea serie e collega</button>
+              </div>
             )}
             <div className="actions">
               <button className="btn small red" onClick={() => confirm(it)}><I.Check size={16} /> Conferma</button>
