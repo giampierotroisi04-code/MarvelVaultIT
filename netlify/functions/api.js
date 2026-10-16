@@ -220,7 +220,7 @@ function leftover(text, k, extra = new Set()) {
 function matchPostRaw(db, text) {
   const nt = norm(text), se = parseSE(text);
   const cands = db.media.map((m) => ({ m, k: norm(m.title) })).filter((c) => c.k.trim().length >= 2 && nt.includes(c.k));
-  if (!cands.length) return { sure: false, reason: "Nessun titolo riconosciuto" };
+  if (!cands.length) return { sure: false, noTitle: true, reason: "Nessun titolo riconosciuto" };
   const best = Math.max(...cands.map((c) => c.k.length));
   const top = cands.filter((c) => c.k.length === best);
   if (top.length > 1) return { sure: false, mediaId: top[0].m.id, reason: "Più titoli compatibili" };
@@ -310,6 +310,35 @@ function matchPost(db, text) {
   return { ...rest, sure: false, reason: `Parole in più dopo il titolo («${lo.slice(0, 3).join(" ")}»): potrebbe essere un altro titolo` };
 }
 
+// Serie non ancora nel catalogo: la crea solo se (1) la didascalia ha stagione ed episodio espliciti,
+// (2) su TMDB c'è UNA SOLA serie con esattamente quel nome, (3) TMDB conferma che l'episodio esiste.
+async function tryCreateSeries(db, text) {
+  const key = process.env.TMDB_API_KEY;
+  const se = parseSE(text);
+  if (!key) return { sure: false, reason: "Nessun titolo riconosciuto (TMDB non configurato)" };
+  if (se.season == null || se.ep == null) return { sure: false, reason: "Titolo non nel catalogo e manca stagione/episodio nella didascalia" };
+  const line = String(text).split("\n").find((l) => parseSE(l).ep != null) || String(text).split("\n")[0] || "";
+  const cleaned = line.toLowerCase()
+    .replace(/\bs\d{1,2}\s*[ ._-]?\s*e\d{1,3}\b/g, " ").replace(/\b\d{1,2}x\d{1,3}\b/g, " ")
+    .replace(/\b(?:stagione|season|stag|s)\.?\s*\d{1,2}\b/g, " ").replace(/\b(?:episodio|episode|ep|puntata|e)\.?\s*\d{1,3}\b/g, " ");
+  const cand = norm(cleaned).split(" ").filter((w) => w && !NOISE.has(w) && !/^\d{3,4}p$/.test(w)).join(" ");
+  if (cand.length < 2) return { sure: false, reason: "Titolo non riconosciuto nella didascalia" };
+  const r = await fetch(`https://api.themoviedb.org/3/search/tv?api_key=${key}&language=it-IT&query=${encodeURIComponent(cand)}`).then((x) => x.json()).catch(() => ({}));
+  const exact = (r.results || []).filter((x) => norm(x.name).trim() === cand || norm(x.original_name).trim() === cand);
+  if (exact.length !== 1) return { sure: false, reason: exact.length ? `Più serie su TMDB con il nome «${cand}»` : `Titolo non nel catalogo e nessuna serie TMDB chiamata «${cand}»` };
+  const t = exact[0], img = (p, w) => (p ? `https://image.tmdb.org/t/p/${w}${p}` : "");
+  if (db.media.some((m) => m.tmdbId === t.id)) return { sure: false, reason: "Serie già presente con un altro titolo: scegli tu quale" };
+  const m = {
+    id: uid(), type: "series", title: t.name, tmdbId: t.id, releaseDate: t.first_air_date || "", year: (t.first_air_date || "").slice(0, 4),
+    overview: t.overview || "", posterUrl: img(t.poster_path, "w500"), backdropUrl: img(t.backdrop_path, "w780"),
+    createdAt: Date.now(), categoryIds: [], visible: true, seasons: [], source: null,
+  };
+  db.media.push(m);
+  const res = await tryCreate(db, { mediaId: m.id, create: { season: se.season, ep: se.ep } });
+  if (!res.sure) { db.media = db.media.filter((x) => x.id !== m.id); return res; }
+  return { ...res, createdSeries: true };
+}
+
 function applySource(db, mediaId, episodeId, src) {
   const m = db.media.find((x) => x.id === mediaId);
   if (!m) return false;
@@ -337,6 +366,7 @@ async function channelPost(post) {
   if (used) return;
   let r = matchPost(db, text);
   if (r.create) r = await tryCreate(db, r);
+  else if (r.noTitle) r = await tryCreateSeries(db, text);
   let note;
   if (r.sure && applySource(db, r.mediaId, r.episodeId, src)) {
     await saveDb(db);
@@ -345,7 +375,7 @@ async function channelPost(post) {
     const p = await getPending();
     p.recent.push({ label: r.label, link: src.link, at: Date.now(), saved });
     await savePending(p);
-    note = saved ? `${r.created ? "🆕 Episodio creato da TMDB e collegato" : "✅ Collegato e salvato"}:\n${r.label}` : `⚠️ Collegato ma NON salvato:\n${r.label}`;
+    note = saved ? `${r.createdSeries ? "🆕 Serie e episodio creati da TMDB e collegati (ricorda di assegnare la categoria)" : r.created ? "🆕 Episodio creato da TMDB e collegato" : "✅ Collegato e salvato"}:\n${r.label}` : `⚠️ Collegato ma NON salvato:\n${r.label}`;
   } else {
     const p = await getPending();
     if (p.items.some((x) => x.messageId === src.messageId && String(x.channelId) === String(channelId))) return;
