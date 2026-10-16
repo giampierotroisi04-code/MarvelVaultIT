@@ -158,6 +158,7 @@ function Detail({ m, user, watch, toggle, say, rate }) {
           <span className="pill">{m.type === "movie" ? <I.Film size={13} /> : <I.Tv size={13} />} {kind(m)}</span>
           {m.year && <span className="pill">{m.year}</span>}
           {m.type === "series" && <span className="pill">{seasons.length} {seasons.length === 1 ? "stagione" : "stagioni"}</span>}
+          {m.type === "series" && (() => { const all = seasons.flatMap((x) => x.episodes).filter((e) => e.hasVideo); const n = all.filter((e) => seen(e.id)).length; return all.length > 0 && n > 0 ? <span className="pill">{n}/{all.length} visti</span> : null; })()}
         </div>
         <h1 className="dtitle">{m.title}</h1>
         <div className="actions">
