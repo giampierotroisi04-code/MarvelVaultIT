@@ -202,7 +202,7 @@ function Detail({ m, user, watch, toggle, say, rate }) {
 }
 
 // ---------- Continua a guardare ----------
-function Continue({ recent = [], media, watch, go }) {
+function Continue({ recent = [], media, watch, go, watched = [] }) {
   const rows = recent.map((r) => {
     const m = media.find((x) => x.id === r.mediaId);
     if (!m) return null;
@@ -210,7 +210,9 @@ function Continue({ recent = [], media, watch, go }) {
     const eps = [...(m.seasons || [])].sort((a, b) => a.number - b.number).flatMap((x) => [...x.episodes].sort((a, b) => a.number - b.number).map((e) => ({ ...e, sn: x.number })));
     const i = eps.findIndex((e) => e.id === r.episodeId);
     if (i < 0) return null;
-    const next = eps.slice(i + 1).find((e) => e.hasVideo);
+    const after = eps.slice(i + 1).filter((e) => e.hasVideo);
+    if (!after.length) return null; // arrivato all'ultimo episodio disponibile: sparisce da "Continua a guardare"
+    const next = after.find((e) => !watched.includes(e.id)) || after[0];
     return { m, ep: eps[i], next, key: m.id };
   }).filter(Boolean).slice(0, 8);
   if (!rows.length) return null;
@@ -433,7 +435,7 @@ export default function App() {
             </div>
           )}
           <div className="page">
-            <Continue recent={user.recent} media={media} watch={watch} go={go} />
+            <Continue recent={user.recent} watched={user.watched} media={media} watch={watch} go={go} />
             {roots.length > 0 && (
               <section className="blk">
                 <div className="sec"><h2>Categorie</h2></div>

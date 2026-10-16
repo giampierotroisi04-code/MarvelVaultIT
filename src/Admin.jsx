@@ -370,6 +370,24 @@ function LinkCheck() {
   );
 }
 
+// ---------- Backup ----------
+function Backup({ say }) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try { await api("admin/backup", { body: {} }); say("Backup inviato nella chat col bot"); }
+    catch (e) { alert(e.data?.error || "Backup non riuscito"); }
+    setBusy(false);
+  };
+  return (
+    <div className="box">
+      <b>Backup del catalogo</b>
+      <p className="hint">Il bot ti manda un file nella chat. Per ripristinarlo, rimandalo al bot con la didascalia <b>/ripristina</b>.</p>
+      <button className="btn small" disabled={busy} onClick={run}>{busy ? "Invio…" : "Invia backup in chat"}</button>
+    </div>
+  );
+}
+
 // ---------- Da collegare (post del canale non riconosciuti con certezza) ----------
 function AutoLink({ media, onDone }) {
   const [items, setItems] = useState(null);
@@ -445,7 +463,7 @@ export default function Admin({ say, onChange }) {
         <button className={"chip" + (tab === "reports" ? " on" : "")} onClick={() => setTab("reports")}>Segnalazioni</button>
         <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
-      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <Stats /> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
+      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Stats /><Backup say={say} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
           {[...db.media].sort((a, b) => b.createdAt - a.createdAt).map((m) => (
