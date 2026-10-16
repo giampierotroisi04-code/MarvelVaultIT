@@ -191,6 +191,9 @@ function deleteCategory(db, id, mode) {
 
 // ---------- Collegamento automatico dei post del canale ----------
 const norm = (t = "") => " " + String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, " e ").replace(/[^a-z0-9]+/g, " ").trim() + " ";
+// versione del titolo senza il prefisso "Marvel's" (su TMDB molte serie sono "Marvel's Jessica Jones", nelle didascalie "Jessica Jones")
+const core = (t) => " " + norm(t).trim().replace(/^marvel s /, "").replace(/^marvel /, "") + " ";
+const titleKey = (m, nt) => [norm(m.title), core(m.title)].filter((k) => k.trim().length >= 2 && nt.includes(k)).sort((a, b) => b.length - a.length)[0];
 const NOISE = new Set(["ita", "italiano", "eng", "sub", "hd", "fullhd", "uhd", "4k", "hdr", "web", "dl", "webdl", "bluray", "bdrip", "mkv", "mp4", "avi", "dvdrip", "h264", "h265", "x264", "x265", "hevc", "aac", "ac3", "stagione", "episodio", "ep", "puntata", "film", "serie", "di", "il", "la", "e", "the", "season", "episode", "titolo", "completo", "completa", "originale", "hdtv", "dub", "dubbed", "nuovo", "nuova", "stag"]);
 const getPending = async () => { const d = (await store().get("autolink", { type: "json" })) || {}; return { items: d.items || [], recent: d.recent || [] }; };
 const savePending = (p) => store().setJSON("autolink", { items: p.items.slice(-200), recent: (p.recent || []).slice(-15) });
@@ -219,7 +222,7 @@ function leftover(text, k, extra = new Set()) {
 // Ritorna { sure, mediaId, episodeId, label, reason }. "sure" = collegamento automatico.
 function matchPostRaw(db, text) {
   const nt = norm(text), se = parseSE(text);
-  const cands = db.media.map((m) => ({ m, k: norm(m.title) })).filter((c) => c.k.trim().length >= 2 && nt.includes(c.k));
+  const cands = db.media.map((m) => ({ m, k: titleKey(m, nt) })).filter((c) => c.k);
   if (!cands.length) return { sure: false, noTitle: true, reason: "Nessun titolo riconosciuto" };
   const best = Math.max(...cands.map((c) => c.k.length));
   const top = cands.filter((c) => c.k.length === best);
@@ -304,14 +307,38 @@ function matchPost(db, text) {
   if (!(r.sure || r.create) || !r.mediaId) return r;
   const m = db.media.find((x) => x.id === r.mediaId);
   const epWords = new Set((m.seasons || []).flatMap((x) => x.episodes.flatMap((e) => norm(e.title).split(" "))));
-  const lo = leftover(text, norm(m.title), epWords);
+  const k = titleKey(m, norm(text));
+  if (!k) return r;
+  const lo = leftover(text, k, epWords);
   if (!lo.length) return r;
   const { create, ...rest } = r;
   return { ...rest, sure: false, reason: `Parole in più dopo il titolo («${lo.slice(0, 3).join(" ")}»): potrebbe essere un altro titolo` };
 }
 
-// Serie non ancora nel catalogo: la crea solo se (1) la didascalia ha stagione ed episodio espliciti,
-// (2) su TMDB c'è UNA SOLA serie con esattamente quel nome, (3) TMDB conferma che l'episodio esiste.
+// Serie non ancora nel catalogo: la crea da sola solo se (1) la didascalia ha stagione ed episodio espliciti,
+// (2) su TMDB c'è UNA SOLA serie con quel nome (ignorando "Marvel's", "The", punteggiatura e spazi, es. S.H.I.E.L.D. = SHIELD),
+// (3) TMDB conferma che l'episodio esiste. Altrimenti propone la serie TMDB più probabile e la crei tu con un tap.
+const squash = (t) => norm(t).trim().replace(/^(marvel s|marvel|the) /, "").replace(/ /g, "");
+const img = (p, w) => (p ? `https://image.tmdb.org/t/p/${w}${p}` : "");
+
+async function buildSeries(db, t, se) {
+  const ex = db.media.find((m) => m.tmdbId === t.id);
+  if (ex) { // la serie c'è già nel catalogo con un altro nome: usa quella
+    const e = (ex.seasons || []).find((x) => x.number === se.season)?.episodes.find((x) => x.number === se.ep);
+    if (e) return e.source?.messageId ? { sure: false, mediaId: ex.id, episodeId: e.id, label: `${ex.title} · S${se.season} E${se.ep}`, reason: "Questo episodio ha già un video collegato" } : { sure: true, mediaId: ex.id, episodeId: e.id, label: `${ex.title} · S${se.season} E${se.ep}` };
+    return tryCreate(db, { mediaId: ex.id, create: { season: se.season, ep: se.ep } });
+  }
+  const m = {
+    id: uid(), type: "series", title: t.name, tmdbId: t.id, releaseDate: t.first_air_date || "", year: (t.first_air_date || "").slice(0, 4),
+    overview: t.overview || "", posterUrl: img(t.poster_path, "w500"), backdropUrl: img(t.backdrop_path, "w780"),
+    createdAt: Date.now(), categoryIds: [], visible: true, seasons: [], source: null,
+  };
+  db.media.push(m);
+  const res = await tryCreate(db, { mediaId: m.id, create: { season: se.season, ep: se.ep } });
+  if (!res.sure) { db.media = db.media.filter((x) => x.id !== m.id); return res; }
+  return { ...res, createdSeries: true };
+}
+
 async function tryCreateSeries(db, text) {
   const key = process.env.TMDB_API_KEY;
   const se = parseSE(text);
@@ -324,19 +351,12 @@ async function tryCreateSeries(db, text) {
   const cand = norm(cleaned).split(" ").filter((w) => w && !NOISE.has(w) && !/^\d{3,4}p$/.test(w)).join(" ");
   if (cand.length < 2) return { sure: false, reason: "Titolo non riconosciuto nella didascalia" };
   const r = await fetch(`https://api.themoviedb.org/3/search/tv?api_key=${key}&language=it-IT&query=${encodeURIComponent(cand)}`).then((x) => x.json()).catch(() => ({}));
-  const exact = (r.results || []).filter((x) => norm(x.name).trim() === cand || norm(x.original_name).trim() === cand);
-  if (exact.length !== 1) return { sure: false, reason: exact.length ? `Più serie su TMDB con il nome «${cand}»` : `Titolo non nel catalogo e nessuna serie TMDB chiamata «${cand}»` };
-  const t = exact[0], img = (p, w) => (p ? `https://image.tmdb.org/t/p/${w}${p}` : "");
-  if (db.media.some((m) => m.tmdbId === t.id)) return { sure: false, reason: "Serie già presente con un altro titolo: scegli tu quale" };
-  const m = {
-    id: uid(), type: "series", title: t.name, tmdbId: t.id, releaseDate: t.first_air_date || "", year: (t.first_air_date || "").slice(0, 4),
-    overview: t.overview || "", posterUrl: img(t.poster_path, "w500"), backdropUrl: img(t.backdrop_path, "w780"),
-    createdAt: Date.now(), categoryIds: [], visible: true, seasons: [], source: null,
-  };
-  db.media.push(m);
-  const res = await tryCreate(db, { mediaId: m.id, create: { season: se.season, ep: se.ep } });
-  if (!res.sure) { db.media = db.media.filter((x) => x.id !== m.id); return res; }
-  return { ...res, createdSeries: true };
+  const results = r.results || [], sc = squash(cand);
+  const exact = results.filter((x) => squash(x.name) === sc || squash(x.original_name) === sc);
+  if (exact.length === 1) return buildSeries(db, exact[0], se);
+  const top = results[0];
+  const suggest = top ? { tmdbSuggest: { id: top.id, name: top.name, year: (top.first_air_date || "").slice(0, 4) }, create: { season: se.season, ep: se.ep } } : {};
+  return { sure: false, ...suggest, reason: exact.length ? `Più serie su TMDB con il nome «${cand}»` : top ? `Nessuna corrispondenza esatta su TMDB per «${cand}»` : `Nessuna serie TMDB trovata per «${cand}»` };
 }
 
 function applySource(db, mediaId, episodeId, src) {
@@ -379,7 +399,7 @@ async function channelPost(post) {
   } else {
     const p = await getPending();
     if (p.items.some((x) => x.messageId === src.messageId && String(x.channelId) === String(channelId))) return;
-    p.items.push({ id: uid(), ...src, text: text.slice(0, 200), mediaId: r.mediaId || null, episodeId: r.episodeId || null, label: r.label || "", reason: r.reason || "", createdAt: Date.now() });
+    p.items.push({ id: uid(), ...src, text: text.slice(0, 200), mediaId: r.mediaId || null, episodeId: r.episodeId || null, tmdbSuggest: r.tmdbSuggest || null, create: r.tmdbSuggest ? r.create : null, label: r.label || "", reason: r.reason || "", createdAt: Date.now() });
     await savePending(p);
     note = `⏳ Da confermare in Admin → Da collegare:\n«${text.slice(0, 80)}»${r.reason ? "\n" + r.reason : ""}`;
   }
@@ -602,11 +622,19 @@ export default async (req) => {
     if (b === "catalog") return json(await getDb());
     if (b === "autolink" && req.method === "GET") return json(await getPending());
     if (b === "autolink-confirm" && req.method === "POST") {
-      const { id, mediaId, episodeId } = await req.json();
+      const { id, mediaId, episodeId, createFromTmdb } = await req.json();
       const p = await getPending(), it = p.items.find((x) => x.id === id);
       if (!it) return json({ error: "Non trovato" }, 404);
       const db = await getDb();
-      if (!applySource(db, mediaId, episodeId || null, { link: it.link, channelId: it.channelId, messageId: it.messageId }))
+      const src = { link: it.link, channelId: it.channelId, messageId: it.messageId };
+      if (createFromTmdb) { // crea la serie suggerita da TMDB e collega
+        if (!it.tmdbSuggest || !it.create) return json({ error: "Nessun suggerimento TMDB" }, 400);
+        const t = await fetch(`https://api.themoviedb.org/3/tv/${it.tmdbSuggest.id}?api_key=${process.env.TMDB_API_KEY}&language=it-IT`).then((x) => x.json()).catch(() => null);
+        if (!t?.id) return json({ error: "TMDB non raggiungibile" }, 400);
+        const r = await buildSeries(db, t, it.create);
+        if (!r.mediaId || !r.episodeId) return json({ error: r.reason || "Impossibile creare" }, 400);
+        applySource(db, r.mediaId, r.episodeId, src);
+      } else if (!applySource(db, mediaId, episodeId || null, src))
         return json({ error: "Scegli un film o un episodio" }, 400);
       await saveDb(db);
       p.items = p.items.filter((x) => x.id !== id);
