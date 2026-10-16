@@ -356,6 +356,39 @@ async function channelPost(post) {
   await Promise.all(admins().map((id) => tg("sendMessage", { chat_id: id, text: note }).catch(() => {})));
 }
 
+
+// ---------- Backup / ripristino ----------
+async function sendBackup(chatId) {
+  const data = {
+    version: 1,
+    at: new Date().toISOString(),
+    catalog: await getDb(),
+    ratings: (await store().get("ratings", { type: "json" })) || {},
+    inbox: await getInbox(),
+  };
+  const fd = new FormData();
+  fd.append("chat_id", String(chatId));
+  fd.append("caption", `Backup ${new Date().toLocaleDateString("it-IT")} · ${data.catalog.media.length} titoli.\nPer ripristinarlo rimanda questo file al bot con la didascalia /ripristina`);
+  fd.append("document", new Blob([JSON.stringify(data)], { type: "application/json" }), `backup-${new Date().toISOString().slice(0, 10)}.json`);
+  return fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendDocument`, { method: "POST", body: fd }).then((r) => r.json());
+}
+
+async function restoreBackup(msg) {
+  const say = (text) => tg("sendMessage", { chat_id: msg.chat.id, text }).catch(() => {});
+  try {
+    const f = await tg("getFile", { file_id: msg.document.file_id });
+    if (!f.ok) return say("Non riesco a leggere il file.");
+    const data = await fetch(`https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${f.result.file_path}`).then((r) => r.json());
+    const c = data?.catalog;
+    if (!c || !Array.isArray(c.media) || !Array.isArray(c.categories)) return say("File non valido: non è un backup.");
+    await store().setJSON("catalog-prev", await getDb()); // copia di sicurezza di quello che stai sostituendo
+    await saveDb(c);
+    if (data.ratings) await store().setJSON("ratings", data.ratings);
+    if (data.inbox) await saveInbox(data.inbox);
+    say(`✅ Backup ripristinato: ${c.media.length} titoli, ${c.categories.length} categorie.\n(Il catalogo di prima è stato conservato come copia di sicurezza.)`);
+  } catch { say("Ripristino non riuscito: file non leggibile."); }
+}
+
 // ---------- Bot webhook ----------
 async function bot(req) {
   if (req.headers.get("x-telegram-bot-api-secret-token") !== process.env.WEBHOOK_SECRET)
@@ -364,6 +397,7 @@ async function bot(req) {
     const u = await req.json();
     if (u.channel_post) await channelPost(u.channel_post);
     const msg = u.message;
+    if (msg?.document && admins().includes(String(msg.from.id)) && /^\/ripristina/i.test(msg.caption || "")) await restoreBackup(msg);
     if (msg?.text) {
       const chat = msg.chat.id;
       if (msg.text.startsWith("/start"))
@@ -710,6 +744,11 @@ export default async (req) => {
           backdropUrl: img(x.backdrop_path, "w780"),
         })),
       });
+    }
+
+    if (b === "backup" && req.method === "POST") {
+      const r = await sendBackup(user.id);
+      return r.ok ? json({ ok: true }) : json({ error: r.description || "Invio non riuscito (hai premuto START sul bot?)" }, 400);
     }
 
     if (b === "tmdb-season") {
