@@ -346,6 +346,30 @@ function Inbox({ kind }) {
   );
 }
 
+// ---------- Controllo link rotti ----------
+function LinkCheck() {
+  const [st, setSt] = useState(null); // { done, total, broken, running }
+  const run = async () => {
+    let from = 0, total = 1, broken = [];
+    setSt({ done: 0, total: 0, broken: [], running: true });
+    try {
+      while (from < total) {
+        const r = await api("admin/check-links", { body: { from, count: 4 } });
+        total = r.total; from = r.next; broken = [...broken, ...r.broken];
+        setSt({ done: Math.min(from, total), total, broken, running: from < total });
+      }
+    } catch (e) { alert(e.data?.error || "Controllo interrotto"); }
+    setSt((x) => x && { ...x, running: false });
+  };
+  return (
+    <>
+      <button className="btn small" disabled={st?.running} onClick={run}>{st?.running ? `Controllo ${st.done}/${st.total}…` : "Controlla link rotti"}</button>
+      {st && !st.running && <p className="hint">{st.broken.length ? `${st.broken.length} link da sistemare su ${st.total}` : `Tutti i ${st.total} link funzionano ✅`}</p>}
+      {st?.broken.map((b, i) => <div className="item" key={i}><b>⚠️ {b.label}</b><small>{b.error} · <a href={b.link} target="_blank" rel="noreferrer">post</a></small></div>)}
+    </>
+  );
+}
+
 // ---------- Da collegare (post del canale non riconosciuti con certezza) ----------
 function AutoLink({ media, onDone }) {
   const [items, setItems] = useState(null);
@@ -354,19 +378,21 @@ function AutoLink({ media, onDone }) {
   const load = () => api("admin/autolink").then((d) => { setRecent(d.recent || []); setItems(d.items); setPick(Object.fromEntries(d.items.map((x) => [x.id, { mediaId: x.mediaId || "", episodeId: x.episodeId || "" }]))); });
   useEffect(() => { load(); }, []);
   if (!items) return <p className="hint">Carico…</p>;
+  const check = <LinkCheck />;
   const log = recent.length > 0 && (
     <>
       <h2 className="sub">Collegati di recente</h2>
       {[...recent].reverse().map((r, i) => <div className="item" key={i}><b>{r.saved === false ? "⚠️ " : "✅ "}{r.label}</b><small>{when(r.at)} · <a href={r.link} target="_blank" rel="noreferrer">post</a></small></div>)}
     </>
   );
-  if (!items.length) return <><p className="hint">Nessun post da confermare 🎉</p>{log}</>;
+  if (!items.length) return <>{check}<p className="hint">Nessun post da confermare 🎉</p>{log}</>;
   const epsOf = (mid) => { const m = media.find((x) => x.id === mid); return m?.type === "series" ? [...(m.seasons || [])].sort((a, b) => a.number - b.number).flatMap((s) => [...s.episodes].sort((a, b) => a.number - b.number).map((e) => ({ id: e.id, t: `S${s.number} E${e.number}${e.title ? " · " + e.title : ""}${e.source ? " (già collegato)" : ""}` }))) : null; };
   const set = (id, p) => setPick({ ...pick, [id]: { ...pick[id], ...p } });
   const confirm = async (it) => { try { await api("admin/autolink-confirm", { body: { id: it.id, ...pick[it.id] } }); await load(); onDone?.(); } catch (e) { alert(e.data?.error || "Errore"); } };
   const dismiss = async (it) => { await api("admin/autolink-dismiss", { body: { id: it.id } }); load(); };
   return (
     <>
+      {check}
       {items.map((it) => {
         const p = pick[it.id] || {}, eps = epsOf(p.mediaId);
         return (

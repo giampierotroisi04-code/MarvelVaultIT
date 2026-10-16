@@ -170,3 +170,18 @@ h1,h2,.brand b{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;letter
 h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:22px 0 8px}
 .item.done{opacity:.55;border-left-color:var(--green)}
 .item .hint{margin:3px 0}
+
+.cont{gap:12px}
+.ccard{flex:0 0 220px;scroll-snap-align:start;display:flex;flex-direction:column;gap:4px}
+.ccard .cimg{aspect-ratio:16/9;border-radius:12px;border:2px solid #fff;background:linear-gradient(135deg,#1d1d22,#000) center/cover;cursor:pointer}
+.ccard small{color:var(--tx2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ccard .actions{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+
+.rating{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}
+.ravg{font-size:20px;font-weight:700;color:#ffc531}
+.ravg small{font-size:12px;font-weight:500;color:var(--tx2)}
+.rmine{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.rmine small{font-size:11px;color:var(--tx2)}
+.stars{display:flex;gap:2px}
+.star{background:none;border:0;padding:2px;font-size:26px;line-height:1;color:#555;cursor:pointer}
+.star.on{color:#ffc531}

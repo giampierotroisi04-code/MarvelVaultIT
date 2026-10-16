@@ -132,7 +132,17 @@ function ReportSheet({ m, onClose, say }) {
   );
 }
 
-function Detail({ m, user, watch, toggle, say }) {
+function Stars({ value = 0, onRate }) {
+  return (
+    <span className="stars">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button key={n} className={"star" + (n <= value ? " on" : "")} aria-label={`${n} stelle`} onClick={() => onRate(n === value ? 0 : n)}>★</button>
+      ))}
+    </span>
+  );
+}
+
+function Detail({ m, user, watch, toggle, say, rate }) {
   const seasons = [...(m.seasons || [])].sort(byNum);
   const [sid, setSid] = useState(seasons[0]?.id);
   const [rep, setRep] = useState(false);
@@ -154,6 +164,10 @@ function Detail({ m, user, watch, toggle, say }) {
           {m.type === "movie" && m.hasVideo && <button className="btn primary" onClick={() => watch(m.id)}><I.Play size={18} /> Guarda</button>}
           <button className="btn round" aria-label="Lista" onClick={() => toggle("watchlist", m.id)}><I.Bookmark size={20} fill={inList ? "currentColor" : "none"} /></button>
           {m.type === "movie" && <button className="btn round" aria-label="Visto" onClick={() => toggle("watched", m.id)}>{seen(m.id) ? <I.Check size={20} /> : <I.Eye size={20} />}</button>}
+        </div>
+        <div className="rating">
+          <span className="ravg">★ {m.rating ? m.rating.avg.toFixed(1) : "–"}<small>{m.rating ? ` (${m.rating.count} ${m.rating.count === 1 ? "voto" : "voti"})` : " nessun voto"}</small></span>
+          <div className="rmine"><small>Il tuo voto</small><Stars value={user.ratings?.[m.id] || 0} onRate={(v) => rate(m.id, v)} /></div>
         </div>
         <p className="overview">{m.overview}</p>
         {m.type === "series" && (
@@ -186,16 +200,105 @@ function Detail({ m, user, watch, toggle, say }) {
   );
 }
 
-function Search({ media, go, user, say }) {
+// ---------- Continua a guardare ----------
+function Continue({ recent = [], media, watch, go }) {
+  const rows = recent.map((r) => {
+    const m = media.find((x) => x.id === r.mediaId);
+    if (!m) return null;
+    if (m.type !== "series") return m.hasVideo ? { m, key: m.id } : null;
+    const eps = [...(m.seasons || [])].sort((a, b) => a.number - b.number).flatMap((x) => [...x.episodes].sort((a, b) => a.number - b.number).map((e) => ({ ...e, sn: x.number })));
+    const i = eps.findIndex((e) => e.id === r.episodeId);
+    if (i < 0) return null;
+    const next = eps.slice(i + 1).find((e) => e.hasVideo);
+    return { m, ep: eps[i], next, key: m.id };
+  }).filter(Boolean).slice(0, 8);
+  if (!rows.length) return null;
+  return (
+    <section className="blk">
+      <div className="sec"><h2>Continua a guardare</h2></div>
+      <div className="rail cont">
+        {rows.map(({ m, ep, next, key }) => (
+          <div key={key} className="ccard">
+            <div className="cimg" style={{ backgroundImage: `url(${(ep && (ep.cover ? imgUrl(ep.cover) : ep.coverUrl)) || art(m, "backdrop") || art(m, "poster")})` }} onClick={() => go({ n: "media", id: m.id })} />
+            <b className="ct">{m.title}</b>
+            <small>{ep ? `S${ep.sn} · E${ep.number}${ep.title ? " · " + ep.title : ""}` : "Film"}</small>
+            <div className="actions">
+              <button className="btn primary small" onClick={() => watch(m.id, ep?.id)}><I.Play size={14} /> Riprendi</button>
+              {next && <button className="btn small" onClick={() => watch(m.id, next.id)}>Prossimo E{next.number}</button>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ---------- Ricerca "che capisce tutto": ignora accenti/punteggiatura, tollera errori di battitura, capisce "loki ep 3" / "s1e2" ----------
+const nz = (t = "") => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+const lev = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
+const STOP = new Set(["film", "serie", "serietv", "episodio", "ep", "puntata", "stagione", "di", "il", "la", "lo", "e", "the", "a"]);
+function parseQ(q) {
+  const t = String(q).toLowerCase();
+  let m = t.match(/\bs(\d{1,2})\s*e(\d{1,3})\b/) || t.match(/\b(\d{1,2})x(\d{1,3})\b/);
+  let season = null, ep = null, rest = t;
+  if (m) { season = +m[1]; ep = +m[2]; rest = t.replace(m[0], " "); }
+  else {
+    const e = t.match(/\b(?:episodio|ep|puntata|e)\.?\s*(\d{1,3})\b/), s = t.match(/\b(?:stagione|s)\s*(\d{1,2})\b/);
+    if (e) { ep = +e[1]; rest = rest.replace(e[0], " "); }
+    if (s) { season = +s[1]; rest = rest.replace(s[0], " "); }
+  }
+  return { tokens: nz(rest).split(" ").filter((w) => w && !STOP.has(w)), season, ep };
+}
+function tokScore(tok, words) {
+  let best = 0;
+  for (const w of words) {
+    if (w === tok) best = Math.max(best, 3);
+    else if (tok.length >= 2 && w.startsWith(tok)) best = Math.max(best, 2.5);
+    else if (tok.length >= 3 && w.includes(tok)) best = Math.max(best, 1.5);
+    else if (tok.length >= 4 && Math.abs(w.length - tok.length) <= 2 && lev(tok, w) <= (tok.length >= 7 ? 2 : 1)) best = Math.max(best, 1.2);
+  }
+  return best;
+}
+function smartSearch(media, q) {
+  const { tokens, season, ep } = parseQ(q);
+  if (!tokens.length && ep == null) return { items: media, ep: null };
+  const scored = media.map((m) => {
+    const tw = nz(m.title + " " + (m.year || "")).split(" "); tw.push(nz(m.title).replace(/ /g, "")); // "ironman" = "iron man"
+    const ow = nz(m.overview || "").split(" ");
+    const ew = (m.seasons || []).flatMap((x) => x.episodes.map((e) => nz(e.title)).join(" ").split(" "));
+    let total = 0;
+    for (const tk of tokens) {
+      const sc = Math.max(tokScore(tk, tw), tokScore(tk, ew) * 0.7, tokScore(tk, ow) * 0.35);
+      if (!sc) return { m, s: 0 };
+      total += sc;
+    }
+    return { m, s: total };
+  }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
+  const items = scored.map((x) => x.m);
+  let hit = null;
+  if (ep != null && items[0]?.type === "series") {
+    const m = items[0], sn = season != null ? m.seasons.find((x) => x.number === season) : m.seasons.length === 1 ? m.seasons[0] : null;
+    const e = sn?.episodes.find((x) => x.number === ep);
+    if (e) hit = { m, e, sn: sn.number };
+  }
+  return { items, ep: hit };
+}
+
+function Search({ media, go, user, say, watch }) {
   const [q, setQ] = useState("");
   const [req, setReq] = useState(false);
   const [f, setF] = useState("all");
-  const items = media.filter((m) =>
-    (f === "all" || m.type === f) &&
-    (m.title + " " + (m.overview || "")).toLowerCase().includes(q.toLowerCase()));
+  const res = smartSearch(media, q);
+  const items = res.items.filter((m) => f === "all" || m.type === f);
   return (
     <div className="page">
-      <div className="searchbox"><I.Search size={18} /><input placeholder="Cerca film e serie" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      <div className="searchbox"><I.Search size={18} /><input autoFocus placeholder="Cerca un titolo, un episodio…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      {res.ep && (
+        <div className="reqcard">
+          <div><b>{res.ep.m.title}</b><small>S{res.ep.sn} · E{res.ep.e.number}{res.ep.e.title ? " · " + res.ep.e.title : ""}</small></div>
+          <button className="btn red small" onClick={() => watch(res.ep.m.id, res.ep.e.id)}><I.Play size={14} /> Guarda</button>
+        </div>
+      )}
       <div className="chips">
         {[["all", "Tutti"], ["movie", "Film"], ["series", "Serie TV"]].map(([k, l]) => (
           <button key={k} className={"chip" + (f === k ? " on" : "")} onClick={() => setF(k)}>{l}</button>
@@ -265,6 +368,13 @@ export default function App() {
       } else say(err === "rate" ? "Vai piano! Riprova tra poco" : "Errore nell'invio del video");
     }
   };
+  const rate = async (mediaId, value) => {
+    try {
+      const r = await api("rate", { body: { mediaId, value } });
+      setBoot((b) => ({ ...b, user: r.user, media: b.media.map((x) => (x.id === mediaId ? { ...x, rating: r.rating } : x)) }));
+      tg?.HapticFeedback?.impactOccurred("light");
+    } catch { say("Voto non riuscito"); }
+  };
   const toggle = async (k, id) => {
     const u = await api("toggle", { body: { kind: k, id } });
     setBoot((b) => ({ ...b, user: u }));
@@ -322,6 +432,7 @@ export default function App() {
             </div>
           )}
           <div className="page">
+            <Continue recent={user.recent} media={media} watch={watch} go={go} />
             {roots.length > 0 && (
               <section className="blk">
                 <div className="sec"><h2>Categorie</h2></div>
@@ -335,7 +446,7 @@ export default function App() {
           </div>
         </div>
       );
-    } else if (view.n === "media" && find(view.id)) body = <Detail m={find(view.id)} user={user} watch={watch} toggle={toggle} say={say} />;
+    } else if (view.n === "media" && find(view.id)) body = <Detail m={find(view.id)} user={user} watch={watch} toggle={toggle} say={say} rate={rate} />;
     else if (view.n === "coll") body = <div className="page"><h1 className="ptitle">{view.title}</h1><Grid items={media.filter((m) => view.ids.includes(m.id)).sort(byRelease("asc"))} go={go} user={user} /></div>;
     else if (view.n === "cat") {
       const c = categories.find((x) => x.id === view.id);
@@ -354,7 +465,7 @@ export default function App() {
           )}
         </div>
       );
-    } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} />;
+    } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
     else if (view.n === "list") body = <div className="page"><h1 className="ptitle">La mia lista</h1><Grid items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} /></div>;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
