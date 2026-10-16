@@ -191,7 +191,7 @@ function deleteCategory(db, id, mode) {
 
 // ---------- Collegamento automatico dei post del canale ----------
 const norm = (t = "") => " " + String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, " e ").replace(/[^a-z0-9]+/g, " ").trim() + " ";
-const NOISE = new Set(["ita", "italiano", "eng", "sub", "hd", "fullhd", "uhd", "4k", "hdr", "web", "dl", "webdl", "bluray", "bdrip", "mkv", "mp4", "avi", "dvdrip", "h264", "h265", "x264", "x265", "hevc", "aac", "ac3", "stagione", "episodio", "ep", "puntata", "film", "serie", "di", "il", "la", "e", "the"]);
+const NOISE = new Set(["ita", "italiano", "eng", "sub", "hd", "fullhd", "uhd", "4k", "hdr", "web", "dl", "webdl", "bluray", "bdrip", "mkv", "mp4", "avi", "dvdrip", "h264", "h265", "x264", "x265", "hevc", "aac", "ac3", "stagione", "episodio", "ep", "puntata", "film", "serie", "di", "il", "la", "e", "the", "season", "episode", "titolo", "completo", "completa", "originale", "hdtv", "dub", "dubbed", "nuovo", "nuova", "stag"]);
 const getPending = async () => { const d = (await store().get("autolink", { type: "json" })) || {}; return { items: d.items || [], recent: d.recent || [] }; };
 const savePending = (p) => store().setJSON("autolink", { items: p.items.slice(-200), recent: (p.recent || []).slice(-15) });
 
@@ -206,8 +206,18 @@ function parseSE(raw) {
   return { season: sm ? +sm[1] : null, ep: m ? +m[1] : null };
 }
 
+// Parole "in più" nella riga del titolo (esclusi S/E, anni, qualità, rumore). Se ci sono, il titolo trovato potrebbe essere
+// solo l'inizio di un altro titolo (es. "Thor" dentro "Thor Ragnarok") e il collegamento non è più sicuro.
+function leftover(text, k, extra = new Set()) {
+  const line = String(text).split("\n").find((l) => norm(l).includes(k)) || "";
+  const clean = line.toLowerCase()
+    .replace(/\bs\d{1,2}\s*[ ._-]?\s*e\d{1,3}\b/g, " ").replace(/\b\d{1,2}x\d{1,3}\b/g, " ")
+    .replace(/\b(?:stagione|season|stag|s)\.?\s*\d{1,2}\b/g, " ").replace(/\b(?:episodio|episode|ep|puntata|e)\.?\s*\d{1,3}\b/g, " ");
+  return norm(clean).replace(k, " ").split(" ").filter((w) => w && !NOISE.has(w) && !extra.has(w) && !/^(19|20)\d\d$/.test(w) && !/^\d{3,4}p$/.test(w) && !/^(480|576|720|1080|2160)$/.test(w));
+}
+
 // Ritorna { sure, mediaId, episodeId, label, reason }. "sure" = collegamento automatico.
-function matchPost(db, text) {
+function matchPostRaw(db, text) {
   const nt = norm(text), se = parseSE(text);
   const cands = db.media.map((m) => ({ m, k: norm(m.title) })).filter((c) => c.k.trim().length >= 2 && nt.includes(c.k));
   if (!cands.length) return { sure: false, reason: "Nessun titolo riconosciuto" };
@@ -219,8 +229,6 @@ function matchPost(db, text) {
   const label = (ep, sn) => (ep ? `${m.title} · S${sn.number} E${ep.number}${ep.title ? " · " + ep.title : ""}` : m.title);
 
   if (m.type !== "series") {
-    const extra = rest.filter((w) => /^\d+$/.test(w) && !/^(19|20)\d\d$/.test(w) && !/^(480|576|720|1080|2160)$/.test(w));
-    if (extra.length) return { sure: false, mediaId: m.id, label: m.title, reason: `Numero in più nel testo (${extra[0]}): forse un altro film` };
     if (m.source?.messageId) return { sure: false, mediaId: m.id, label: m.title, reason: "Questo film ha già un video collegato" };
     return { sure: true, mediaId: m.id, label: m.title };
   }
@@ -289,6 +297,17 @@ async function tryCreate(db, r) {
   season.episodes.push(ep);
   season.episodes.sort((a, b) => a.number - b.number);
   return { sure: true, created: true, mediaId: m.id, episodeId: ep.id, label: `${m.title} · S${sn} E${en}${t.title ? " · " + t.title : ""}` };
+}
+
+function matchPost(db, text) {
+  const r = matchPostRaw(db, text);
+  if (!(r.sure || r.create) || !r.mediaId) return r;
+  const m = db.media.find((x) => x.id === r.mediaId);
+  const epWords = new Set((m.seasons || []).flatMap((x) => x.episodes.flatMap((e) => norm(e.title).split(" "))));
+  const lo = leftover(text, norm(m.title), epWords);
+  if (!lo.length) return r;
+  const { create, ...rest } = r;
+  return { ...rest, sure: false, reason: `Parole in più dopo il titolo («${lo.slice(0, 3).join(" ")}»): potrebbe essere un altro titolo` };
 }
 
 function applySource(db, mediaId, episodeId, src) {
@@ -469,6 +488,11 @@ export default async (req) => {
     if (!isAdmin) await recordSend(user, m).catch(() => {});
     // ricorda cosa sta guardando (per "Continua a guardare"): un solo posto per titolo, il più recente per primo
     const u = await getUser(user.id);
+    // segna come visto in automatico (si può togliere a mano); la serie risulta vista quando lo sono tutti gli episodi con video
+    const w = new Set(u.watched || []);
+    w.add(ep ? ep.id : m.id);
+    if (ep && (m.seasons || []).flatMap((x) => x.episodes).filter((e) => e.visible !== false && e.source).every((e) => w.has(e.id))) w.add(m.id);
+    u.watched = [...w];
     u.recent = [{ mediaId: m.id, episodeId: ep?.id || null, at: Date.now() }, ...(u.recent || []).filter((x) => x.mediaId !== m.id)].slice(0, 12);
     await store().setJSON(`user:${user.id}`, u).catch(() => {});
     return json({ ok: true });
