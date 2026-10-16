@@ -79,8 +79,20 @@ function sendVideo(chatId, m, ep) {
     caption: captionFor(m, ep),
     protect_content: process.env.PROTECT_CONTENT === "true",
     reply_markup: keyboard(m, ep),
+  }).then(async (r) => {
+    // post cancellato dal canale: avvisa gli admin (al massimo una volta ogni ora per video)
+    if (!r.ok && /message to copy not found|MESSAGE_ID_INVALID/i.test(r.description || "")) {
+      const k = `${src.channelId}:${src.messageId}`, now = Date.now();
+      if (!(brokenSeen.get(k) > now - 3600e3)) {
+        brokenSeen.set(k, now);
+        const season = ep && (m.seasons || []).find((x) => x.episodes.some((e) => e.id === ep.id));
+        await notifyAdmins(`⚠️ Link rotto: il post è stato cancellato dal canale.\n${m.title}${ep ? ` · S${season?.number} E${ep.number}` : ""}`);
+      }
+    }
+    return r;
   });
 }
+const brokenSeen = new Map();
 
 // ---------- Rate limit (best effort, in memoria) ----------
 const hits = new Map();
@@ -141,7 +153,7 @@ async function recordSend(user, m) {
   await saveStats(st);
 }
 
-const getUser = async (id) => (await store().get(`user:${id}`, { type: "json" })) || { watchlist: [], watched: [] };
+const getUser = async (id) => (await store().get(`user:${id}`, { type: "json" })) || { watchlist: [], watched: [], recent: [], ratings: {} };
 
 const pub = (m) => ({
   ...m,
@@ -222,13 +234,61 @@ function matchPost(db, text) {
   if (sn && se.ep != null) ep = sn.episodes.find((e) => e.number === se.ep);
   if (ep && byTitle && byTitle.e.id !== ep.id) return { sure: false, mediaId: m.id, episodeId: ep.id, label: label(ep, sn), reason: "Numero e titolo dell'episodio non coincidono" };
   if (!ep && byTitle) { ep = byTitle.e; return fin(byTitle.x); }
-  if (!ep) return { sure: false, mediaId: m.id, reason: "Episodio non identificato" };
+  if (!ep) {
+    const seasonNum = se.season ?? (seasons.length === 1 ? seasons[0].number : null);
+    if (se.ep != null && seasonNum != null) return { sure: false, mediaId: m.id, create: { season: seasonNum, ep: se.ep }, reason: "Episodio non ancora nel catalogo" };
+    return { sure: false, mediaId: m.id, reason: "Episodio non identificato" };
+  }
   return fin(sn);
   function fin(season) {
     const r = { mediaId: m.id, episodeId: ep.id, label: label(ep, season) };
     if (ep.source?.messageId) return { ...r, sure: false, reason: "Questo episodio ha già un video collegato" };
     return { ...r, sure: true };
   }
+}
+
+async function tmdbSeasonEps(id, n) {
+  const key = process.env.TMDB_API_KEY;
+  if (!key || !id) return null;
+  const get = (l) => fetch(`https://api.themoviedb.org/3/tv/${encodeURIComponent(id)}/season/${encodeURIComponent(n)}?api_key=${key}&language=${l}`).then((x) => x.json()).catch(() => ({}));
+  const [it, en] = await Promise.all([get("it-IT"), get("en-US")]);
+  if (!it.episodes && !en.episodes) return null;
+  const enBy = new Map((en.episodes || []).map((e) => [e.episode_number, e]));
+  return (it.episodes || en.episodes).map((e) => {
+    const f = enBy.get(e.episode_number) || {};
+    return {
+      number: e.episode_number,
+      title: e.name || f.name || "",
+      overview: e.overview || f.overview || "", // fallback in inglese se manca in italiano
+      coverUrl: e.still_path || f.still_path ? `https://image.tmdb.org/t/p/w780${e.still_path || f.still_path}` : "",
+      airDate: e.air_date || "",
+    };
+  });
+}
+
+// Tutti i video collegati (film + episodi)
+const allSources = (db) => db.media.flatMap((m) => [
+  ...(m.source?.messageId ? [{ label: m.title, src: m.source }] : []),
+  ...(m.seasons || []).flatMap((x) => x.episodes.filter((e) => e.source?.messageId).map((e) => ({ label: `${m.title} · S${x.number} E${e.number}${e.title ? " · " + e.title : ""}`, src: e.source }))),
+]);
+
+// Crea l'episodio mancante, ma SOLO se la serie è collegata a TMDB e TMDB conferma che stagione/episodio esistono.
+async function tryCreate(db, r) {
+  const m = db.media.find((x) => x.id === r.mediaId);
+  const { season: sn, ep: en } = r.create;
+  if (!m?.tmdbId) return { ...r, reason: "Episodio non nel catalogo e la serie non è collegata a TMDB (riseleziona la serie con il bottone TMDB)" };
+  const eps = await tmdbSeasonEps(m.tmdbId, sn);
+  if (!eps) return { ...r, reason: `TMDB non trova la stagione ${sn} (o non è raggiungibile)` };
+  const t = eps.find((e) => e.number === en);
+  if (!t) return { ...r, reason: `L'episodio ${en} non esiste su TMDB per la stagione ${sn}` };
+  m.seasons = m.seasons || [];
+  let season = m.seasons.find((x) => x.number === sn);
+  if (!season) { season = { id: uid(), number: sn, name: "", cover: "", episodes: [] }; m.seasons.push(season); m.seasons.sort((a, b) => a.number - b.number); }
+  if (season.episodes.some((e) => e.number === en)) return { ...r, reason: "Episodio già presente" };
+  const ep = { id: uid(), number: en, title: t.title, overview: t.overview, cover: "", coverUrl: t.coverUrl, visible: true, source: null };
+  season.episodes.push(ep);
+  season.episodes.sort((a, b) => a.number - b.number);
+  return { sure: true, created: true, mediaId: m.id, episodeId: ep.id, label: `${m.title} · S${sn} E${en}${t.title ? " · " + t.title : ""}` };
 }
 
 function applySource(db, mediaId, episodeId, src) {
@@ -256,7 +316,8 @@ async function channelPost(post) {
   const used = db.media.some((m) => (m.source?.messageId === src.messageId && String(m.source.channelId) === String(channelId)) ||
     (m.seasons || []).some((x) => x.episodes.some((e) => e.source?.messageId === src.messageId && String(e.source.channelId) === String(channelId))));
   if (used) return;
-  const r = matchPost(db, text);
+  let r = matchPost(db, text);
+  if (r.create) r = await tryCreate(db, r);
   let note;
   if (r.sure && applySource(db, r.mediaId, r.episodeId, src)) {
     await saveDb(db);
@@ -265,7 +326,7 @@ async function channelPost(post) {
     const p = await getPending();
     p.recent.push({ label: r.label, link: src.link, at: Date.now(), saved });
     await savePending(p);
-    note = saved ? `✅ Collegato e salvato:\n${r.label}` : `⚠️ Collegato ma NON salvato:\n${r.label}`;
+    note = saved ? `${r.created ? "🆕 Episodio creato da TMDB e collegato" : "✅ Collegato e salvato"}:\n${r.label}` : `⚠️ Collegato ma NON salvato:\n${r.label}`;
   } else {
     const p = await getPending();
     if (p.items.some((x) => x.messageId === src.messageId && String(x.channelId) === String(channelId))) return;
@@ -359,8 +420,9 @@ export default async (req) => {
 
   if (a === "catalog") {
     const db = await getDb();
+    const rt = (await store().get("ratings", { type: "json" })) || {};
     return json({
-      media: db.media.filter((m) => m.visible !== false).map(pub),
+      media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
       categories: db.categories.filter((x) => x.visible !== false),
       user: await getUser(user.id),
     });
@@ -377,6 +439,24 @@ export default async (req) => {
     return json(u);
   }
 
+  // Voto da 1 a 5 stelle (0 = toglie il voto). Un voto per utente, la media si aggiorna subito.
+  if (a === "rate" && req.method === "POST") {
+    const { mediaId, value } = await req.json();
+    const v = Math.round(Number(value));
+    if (!mediaId || !(v >= 0 && v <= 5)) return json({ error: "bad request" }, 400);
+    const db = await getDb();
+    if (!db.media.some((m) => m.id === mediaId && m.visible !== false)) return json({ error: "not_found" }, 404);
+    const u = await getUser(user.id);
+    u.ratings = u.ratings || {};
+    const rt = (await store().get("ratings", { type: "json" })) || {};
+    const r = rt[mediaId] || { sum: 0, count: 0 };
+    if (u.ratings[mediaId]) { r.sum -= u.ratings[mediaId]; r.count -= 1; }
+    if (v) { r.sum += v; r.count += 1; u.ratings[mediaId] = v; } else delete u.ratings[mediaId];
+    rt[mediaId] = r;
+    await Promise.all([store().setJSON("ratings", rt), store().setJSON(`user:${user.id}`, u)]);
+    return json({ user: u, rating: r.count ? { avg: Math.round((r.sum / r.count) * 10) / 10, count: r.count } : null });
+  }
+
   if (a === "watch" && req.method === "POST") {
     const { mediaId, episodeId } = await req.json();
     const db = await getDb();
@@ -387,6 +467,10 @@ export default async (req) => {
     const r = await sendVideo(user.id, m, ep);
     if (!r.ok) return json({ error: r.error_code === 403 ? "start_required" : "send_failed", detail: r.description }, 400);
     if (!isAdmin) await recordSend(user, m).catch(() => {});
+    // ricorda cosa sta guardando (per "Continua a guardare"): un solo posto per titolo, il più recente per primo
+    const u = await getUser(user.id);
+    u.recent = [{ mediaId: m.id, episodeId: ep?.id || null, at: Date.now() }, ...(u.recent || []).filter((x) => x.mediaId !== m.id)].slice(0, 12);
+    await store().setJSON(`user:${user.id}`, u).catch(() => {});
     return json({ ok: true });
   }
 
@@ -605,26 +689,27 @@ export default async (req) => {
     }
 
     if (b === "tmdb-season") {
-      const key = process.env.TMDB_API_KEY;
-      if (!key) return json({ error: "TMDB non configurato" }, 400);
-      const id = encodeURIComponent(url.searchParams.get("id") || "");
-      const n = encodeURIComponent(url.searchParams.get("season") || "1");
-      const get = (lang) => fetch(`https://api.themoviedb.org/3/tv/${id}/season/${n}?api_key=${key}&language=${lang}`).then((x) => x.json());
-      const [it, en] = await Promise.all([get("it-IT"), get("en-US")]);
-      if (!it.episodes && !en.episodes) return json({ error: "Stagione non trovata su TMDB" }, 404);
-      const enBy = new Map((en.episodes || []).map((e) => [e.episode_number, e]));
-      return json({
-        episodes: (it.episodes || en.episodes).map((e) => {
-          const f = enBy.get(e.episode_number) || {};
-          return {
-            number: e.episode_number,
-            title: e.name || f.name || "",
-            overview: e.overview || f.overview || "", // fallback in inglese se manca in italiano
-            coverUrl: e.still_path || f.still_path ? `https://image.tmdb.org/t/p/w780${e.still_path || f.still_path}` : "",
-            airDate: e.air_date || "",
-          };
-        }),
-      });
+      if (!process.env.TMDB_API_KEY) return json({ error: "TMDB non configurato" }, 400);
+      const episodes = await tmdbSeasonEps(url.searchParams.get("id"), url.searchParams.get("season") || "1");
+      return episodes ? json({ episodes }) : json({ error: "Stagione non trovata su TMDB" }, 404);
+    }
+
+    // Controlla a blocchi se i video collegati esistono ancora (copia nella chat dell'admin e subito cancella la copia)
+    if (b === "check-links" && req.method === "POST") {
+      const { from = 0, count = 4 } = await req.json();
+      const all = allSources(await getDb());
+      const broken = [];
+      for (const it of all.slice(from, from + count)) {
+        let r = await tg("copyMessage", { chat_id: user.id, from_chat_id: it.src.channelId, message_id: it.src.messageId });
+        if (r.error_code === 429) { await new Promise((z) => setTimeout(z, Math.min((r.parameters?.retry_after || 2) * 1000, 3000))); r = await tg("copyMessage", { chat_id: user.id, from_chat_id: it.src.channelId, message_id: it.src.messageId }); }
+        if (r.ok) { if (r.result?.message_id) await tg("deleteMessage", { chat_id: user.id, message_id: r.result.message_id }).catch(() => {}); }
+        else {
+          const d = r.description || "";
+          broken.push({ label: it.label, link: it.src.link, error: /message to copy not found|MESSAGE_ID_INVALID/i.test(d) ? "Post cancellato" : /can't initiate|Forbidden/i.test(d) ? "Premi START sul bot" : d });
+        }
+        await new Promise((z) => setTimeout(z, 250));
+      }
+      return json({ total: all.length, next: from + count, broken });
     }
   }
 
