@@ -344,11 +344,12 @@ async function tryCreateSeries(db, text) {
   const se = parseSE(text);
   if (!key) return { sure: false, reason: "Nessun titolo riconosciuto (TMDB non configurato)" };
   if (se.season == null || se.ep == null) return { sure: false, reason: "Titolo non nel catalogo e manca stagione/episodio nella didascalia" };
-  const line = String(text).split("\n").find((l) => parseSE(l).ep != null) || String(text).split("\n")[0] || "";
-  const cleaned = line.toLowerCase()
+  // il titolo è la prima riga che, tolti stagione/episodio e parole di contorno, contiene ancora del testo
+  const clean = (l) => norm(l.toLowerCase()
     .replace(/\bs\d{1,2}\s*[ ._-]?\s*e\d{1,3}\b/g, " ").replace(/\b\d{1,2}x\d{1,3}\b/g, " ")
-    .replace(/\b(?:stagione|season|stag|s)\.?\s*\d{1,2}\b/g, " ").replace(/\b(?:episodio|episode|ep|puntata|e)\.?\s*\d{1,3}\b/g, " ");
-  const cand = norm(cleaned).split(" ").filter((w) => w && !NOISE.has(w) && !/^\d{3,4}p$/.test(w)).join(" ");
+    .replace(/\b(?:stagione|season|stag|s)\.?\s*\d{1,2}\b/g, " ").replace(/\b(?:episodio|episode|ep|puntata|e)\.?\s*\d{1,3}\b/g, " "))
+    .split(" ").filter((w) => w && !NOISE.has(w) && !/^\d{3,4}p$/.test(w)).join(" ");
+  const cand = String(text).split("\n").map(clean).find((c) => c.length >= 2) || "";
   if (cand.length < 2) return { sure: false, reason: "Titolo non riconosciuto nella didascalia" };
   const r = await fetch(`https://api.themoviedb.org/3/search/tv?api_key=${key}&language=it-IT&query=${encodeURIComponent(cand)}`).then((x) => x.json()).catch(() => ({}));
   const results = r.results || [], sc = squash(cand);
