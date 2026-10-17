@@ -370,12 +370,114 @@ function LinkCheck() {
   );
 }
 
+// ---------- Importa lista timeline (titoli in inglese) ----------
+function ImportList({ media, onApply }) {
+  const [text, setText] = useState("");
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [tmdbOn, setTmdbOn] = useState(true);
+  const [merged, setMerged] = useState(0);
+  // Pulisce ogni riga: toglie numerazione, note tra parentesi e dopo il trattino lungo; l'anno (2008) resta come aiuto
+  const clean = (line) => {
+    let l = line.trim().replace(/^\d+[.)]\s+/, "").replace(/^[-•*]\s+/, "");
+    l = l.replace(/\)\s+[–—]\s+.*$/, ")");
+    let year = 0;
+    for (;;) {
+      const m = l.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+      if (!m) break;
+      if (/^\d{4}$/.test(m[2].trim())) year = year || +m[2];
+      l = m[1];
+    }
+    return { q: l.replace(/\s+[–—]\s+.*$/, "").trim(), year };
+  };
+  const parse = (t) => {
+    const seen = new Set(), out = [];
+    let lines = 0;
+    for (const raw of t.split("\n")) {
+      if (!raw.trim()) continue;
+      lines++;
+      const it = clean(raw);
+      if (!it.q) continue;
+      const k = it.q.toLowerCase();
+      if (!seen.has(k)) { seen.add(k); out.push(it); }
+    }
+    return { out, merged: lines - out.length };
+  };
+  const run = async () => {
+    const { out: items, merged } = parse(text);
+    if (!items.length) return;
+    setMerged(merged);
+    setRows(null);
+    const all = [];
+    try {
+      for (let i = 0; i < items.length; i += 8) {
+        setBusy(`Analizzo ${Math.min(i + 8, items.length)} / ${items.length}…`);
+        const r = await api("admin/timeline-match", { body: { items: items.slice(i, i + 8) } });
+        setTmdbOn(r.tmdbOn);
+        all.push(...r.results);
+      }
+      setRows(all);
+    } catch { alert("Analisi non riuscita, riprova"); }
+    setBusy("");
+  };
+  const setId = (i, id) => setRows(rows.map((r, k) => (k === i ? { ...r, id: id || null, how: id ? "manuale" : null } : r)));
+  const by = Object.fromEntries(media.map((m) => [m.id, m]));
+  const sorted = [...media].sort((a, b) => a.title.localeCompare(b.title));
+  const label = (r) => `${r.tmdb?.title || r.q}${r.year || r.tmdb?.year ? ` (${r.year || r.tmdb.year})` : ""}`;
+  const missing = rows ? rows.filter((r) => !r.id) : [];
+  const ok = rows ? rows.filter((r) => r.id) : [];
+  const listed = [...new Set(ok.map((r) => r.id))];
+  return (
+    <div className="box">
+      <b>Importa lista (titoli in inglese)</b>
+      <p className="hint">Incolla un titolo per riga, nell'ordine cronologico. L'anno tra parentesi è facoltativo, es. Iron Man (2008).</p>
+      <textarea className="in" rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={"Captain America: The First Avenger\nCaptain Marvel\nIron Man"} />
+      <button className="btn red small" disabled={!!busy || !text.trim()} onClick={run}>{busy || "Analizza"}</button>
+      {rows && (
+        <>
+          <p className="hint">Abbinati {ok.length} su {rows.length}.{merged > 0 && ` ${merged} righe unite perché ripetute (una serie spezzata resta al punto della prima apparizione).`}{!tmdbOn && " TMDB non configurato: abbino solo i titoli identici."}</p>
+          {missing.length > 0 && (
+            <>
+              <b>Da aggiungere ({missing.length})</b>
+              {rows.map((r, i) => !r.id && (
+                <div className="item" key={i}>
+                  <b>{label(r)}</b>{r.tmdb?.it && r.tmdb.it !== r.tmdb.title && <small> · {r.tmdb.it}</small>}
+                  <select className="in" value="" onChange={(e) => setId(i, e.target.value)}>
+                    <option value="">Collega a un titolo già presente…</option>
+                    {sorted.map((m) => <option key={m.id} value={m.id}>{m.title}{m.year ? ` (${m.year})` : ""}</option>)}
+                  </select>
+                </div>
+              ))}
+              <textarea className="in" rows={Math.min(8, missing.length + 1)} readOnly value={missing.map(label).join("\n")} onFocus={(e) => e.target.select()} />
+            </>
+          )}
+          {ok.length > 0 && (
+            <details>
+              <summary>Abbinati ({ok.length})</summary>
+              {rows.map((r, i) => r.id && by[r.id] && (
+                <div className="item" key={i}>
+                  <b>{r.q}</b> <small>→ {by[r.id].title} · {r.how}</small>
+                  <div className="actions"><button className="btn small" onClick={() => setId(i, null)}><I.X size={16} /> Scollega</button></div>
+                </div>
+              ))}
+            </details>
+          )}
+          <button className="btn red" disabled={!listed.length} onClick={() => onApply(listed)}><I.Check size={16} /> Applica ordine ({listed.length} titoli)</button>
+          {missing.length > 0 && <p className="hint">I mancanti restano fuori dall'ordine: aggiungili al catalogo e rilancia l'import.</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- Ordine cronologico ----------
 function Timeline({ media, timeline = [], out: outInit = [], q = "", say, onDone }) {
   const rel = byRelease("asc");
   const pos = (m) => { const i = timeline.indexOf(m.id); return i < 0 ? Infinity : i; };
   const [ids, setIds] = useState(() => [...media].sort((a, b) => (pos(a) === pos(b) ? rel(a, b) : pos(a) - pos(b))).map((m) => m.id));
   const [dirty, setDirty] = useState(false);
+  const [imp, setImp] = useState(false);
+  const applyList = (listed) => { const set = new Set(listed); setIds([...listed, ...ids.filter((x) => !set.has(x))]); setDirty(true); setImp(false); say("Ordine applicato: premi Salva ordine"); };
   const [out, setOut] = useState(outInit);
   const toggleOut = (id) => { setOut(out.includes(id) ? out.filter((x) => x !== id) : [...out, id]); setDirty(true); };
   const by = Object.fromEntries(media.map((m) => [m.id, m]));
@@ -389,6 +491,8 @@ function Timeline({ media, timeline = [], out: outInit = [], q = "", say, onDone
     <>
       <p className="hint">Ordine cronologico (storia) della TIMELINE MARVEL: frecce, oppure scrivi la posizione e premi invio. Con "Escludi" un titolo sparisce dalla timeline (sia cronologica sia di uscita). Poi salva.</p>
       <button className="btn red small" disabled={!dirty} onClick={save}>Salva ordine</button>
+      <button className="btn small" style={{ marginLeft: 8 }} onClick={() => setImp(!imp)}><I.Plus size={16} /> Importa lista</button>
+      {imp && <ImportList media={media} onApply={applyList} />}
       {ids.map((id, i) => by[id] && matchQ(by[id], q) && (
         <div className="item" key={id} style={out.includes(id) ? { opacity: 0.45 } : undefined}>
           <input className="in sm" type="number" min="1" max={ids.length} defaultValue={i + 1} key={i + ":" + id} title="Posizione"
