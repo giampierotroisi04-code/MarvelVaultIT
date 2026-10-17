@@ -371,7 +371,7 @@ function LinkCheck() {
 }
 
 // ---------- Importa lista timeline (titoli in inglese) ----------
-function ImportList({ media, onApply }) {
+function ImportList({ media, onApply, hint = "Incolla un titolo per riga, nell'ordine cronologico.", applyLabel = "Applica ordine" }) {
   const [text, setText] = useState("");
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState("");
@@ -430,7 +430,7 @@ function ImportList({ media, onApply }) {
   return (
     <div className="box">
       <b>Importa lista (titoli in inglese)</b>
-      <p className="hint">Incolla un titolo per riga, nell'ordine cronologico. L'anno tra parentesi è facoltativo, es. Iron Man (2008).</p>
+      <p className="hint">{hint} L'anno tra parentesi è facoltativo, es. Iron Man (2008).</p>
       <textarea className="in" rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={"Captain America: The First Avenger\nCaptain Marvel\nIron Man"} />
       <button className="btn red small" disabled={!!busy || !text.trim()} onClick={run}>{busy || "Analizza"}</button>
       {rows && (
@@ -462,7 +462,7 @@ function ImportList({ media, onApply }) {
               ))}
             </details>
           )}
-          <button className="btn red" disabled={!listed.length} onClick={() => onApply(listed)}><I.Check size={16} /> Applica ordine ({listed.length} titoli)</button>
+          <button className="btn red" disabled={!listed.length} onClick={() => onApply(listed)}><I.Check size={16} /> {applyLabel} ({listed.length} titoli)</button>
           {missing.length > 0 && <p className="hint">I mancanti restano fuori dall'ordine: aggiungili al catalogo e rilancia l'import.</p>}
         </>
       )}
@@ -471,37 +471,73 @@ function ImportList({ media, onApply }) {
 }
 
 // ---------- Ordine cronologico ----------
+// Una voce è un titolo intero ("mediaId") oppure una singola stagione di una serie ("mediaId~seasonId")
 function Timeline({ media, timeline = [], out: outInit = [], q = "", say, onDone }) {
   const rel = byRelease("asc");
-  const pos = (m) => { const i = timeline.indexOf(m.id); return i < 0 ? Infinity : i; };
-  const [ids, setIds] = useState(() => [...media].sort((a, b) => (pos(a) === pos(b) ? rel(a, b) : pos(a) - pos(b))).map((m) => m.id));
+  const by = Object.fromEntries(media.map((m) => [m.id, m]));
+  const mOf = (k) => by[k.split("~")[0]];
+  const sOf = (k) => { const sid = k.split("~")[1]; return sid ? mOf(k)?.seasons?.find((x) => x.id === sid) : null; };
+  const valid = (k) => !!mOf(k) && (!k.includes("~") || !!sOf(k));
+  const pos = (k) => { const i = timeline.indexOf(k); return i < 0 ? Infinity : i; };
+  const [ids, setIds] = useState(() => [...media.map((m) => m.id), ...timeline.filter((k) => k.includes("~") && valid(k))].sort((a, b) => (pos(a) === pos(b) ? rel(mOf(a), mOf(b)) : pos(a) - pos(b))));
   const [dirty, setDirty] = useState(false);
   const [imp, setImp] = useState(false);
+  const [pickM, setPickM] = useState("");
+  const [pickS, setPickS] = useState("");
   const applyList = (listed) => { const set = new Set(listed); setIds([...listed, ...ids.filter((x) => !set.has(x))]); setDirty(true); setImp(false); say("Ordine applicato: premi Salva ordine"); };
   const [out, setOut] = useState(outInit);
   const toggleOut = (id) => { setOut(out.includes(id) ? out.filter((x) => x !== id) : [...out, id]); setDirty(true); };
-  const by = Object.fromEntries(media.map((m) => [m.id, m]));
   const move = (i, j) => {
     if (j < 0 || j >= ids.length || i === j) return;
     const a = [...ids]; const [x] = a.splice(i, 1); a.splice(j, 0, x);
     setIds(a); setDirty(true);
   };
-  const save = async () => { try { await api("admin/timeline", { body: { ids, out } }); setDirty(false); say("Ordine cronologico salvato"); onDone?.(); } catch { alert("Salvataggio non riuscito"); } };
+  // aggiunge la stagione scelta subito dopo il titolo intero della serie
+  const addSeason = () => {
+    const key = `${pickM}~${pickS}`;
+    if (!pickM || !pickS) return;
+    if (ids.includes(key)) return say("Questa stagione è già in timeline");
+    const a = [...ids], at = a.indexOf(pickM);
+    let j = at < 0 ? a.length : at + 1;
+    while (j < a.length && a[j].startsWith(pickM + "~")) j++; // dopo le altre stagioni già inserite
+    a.splice(j, 0, key);
+    setIds(a); setDirty(true); setPickS("");
+    say("Stagione aggiunta: spostala nel punto giusto e premi Salva ordine");
+  };
+  const delSeason = (key) => { setIds(ids.filter((x) => x !== key)); setOut(out.filter((x) => x !== key)); setDirty(true); };
+  const series = [...media].filter((m) => m.type === "series" && (m.seasons || []).length).sort((a, b) => a.title.localeCompare(b.title));
+  const pickSeasons = [...(by[pickM]?.seasons || [])].sort((a, b) => a.number - b.number);
+  const save = async () => { try { await api("admin/timeline", { body: { ids: ids.filter(valid), out: out.filter(valid) } }); setDirty(false); say("Ordine cronologico salvato"); onDone?.(); } catch { alert("Salvataggio non riuscito"); } };
   return (
     <>
-      <p className="hint">Ordine cronologico (storia) della TIMELINE MARVEL: frecce, oppure scrivi la posizione e premi invio. Con "Escludi" un titolo sparisce dalla timeline (sia cronologica sia di uscita). Poi salva.</p>
+      <p className="hint">Ordine cronologico (storia) della TIMELINE MARVEL: frecce, oppure scrivi la posizione e premi invio. Con "Escludi" una voce sparisce dalla timeline (sia cronologica sia di uscita). Per una serie puoi anche inserire una <b>singola stagione</b> in un punto preciso (es. Daredevil stagione 2): aggiungila qui sotto, poi escludi il titolo intero se non lo vuoi. Poi salva.</p>
       <button className="btn red small" disabled={!dirty} onClick={save}>Salva ordine</button>
       <button className="btn small" style={{ marginLeft: 8 }} onClick={() => setImp(!imp)}><I.Plus size={16} /> Importa lista</button>
       {imp && <ImportList media={media} onApply={applyList} />}
-      {ids.map((id, i) => by[id] && matchQ(by[id], q) && (
+      <div className="box">
+        <b>Aggiungi una stagione</b>
+        <select className="in" value={pickM} onChange={(e) => { setPickM(e.target.value); setPickS(""); }}>
+          <option value="">Scegli la serie…</option>
+          {series.map((m) => <option key={m.id} value={m.id}>{m.title}{m.year ? ` (${m.year})` : ""}</option>)}
+        </select>
+        {pickM && (
+          <select className="in" value={pickS} onChange={(e) => setPickS(e.target.value)}>
+            <option value="">Scegli la stagione…</option>
+            {pickSeasons.map((x) => <option key={x.id} value={x.id}>{x.name || `Stagione ${x.number}`}{ids.includes(`${pickM}~${x.id}`) ? " (già inserita)" : ""}</option>)}
+          </select>
+        )}
+        <button className="btn small" disabled={!pickM || !pickS} onClick={addSeason}><I.Plus size={16} /> Aggiungi alla timeline</button>
+      </div>
+      {ids.map((id, i) => mOf(id) && matchQ(mOf(id), q) && (
         <div className="item" key={id} style={out.includes(id) ? { opacity: 0.45 } : undefined}>
           <input className="in sm" type="number" min="1" max={ids.length} defaultValue={i + 1} key={i + ":" + id} title="Posizione"
             onKeyDown={(e) => e.key === "Enter" && move(i, Math.min(ids.length, Math.max(1, +e.target.value || 1)) - 1)} />
-          <b>{by[id].title}</b> <small>{by[id].year}</small>
+          <b>{mOf(id).title}{sOf(id) ? ` · ${sOf(id).name || `Stagione ${sOf(id).number}`}` : ""}</b> <small>{mOf(id).year}</small>
           <div className="actions">
             <button className="btn small" onClick={() => toggleOut(id)}>{out.includes(id) ? "Includi" : "Escludi"}</button>
             <button className="btn small" onClick={() => move(i, i - 1)}><I.ArrowUp size={16} /></button>
             <button className="btn small" onClick={() => move(i, i + 1)}><I.ArrowDown size={16} /></button>
+            {sOf(id) && <button className="btn small" onClick={() => delSeason(id)}><I.Trash size={16} /></button>}
           </div>
         </div>
       ))}
@@ -530,29 +566,53 @@ function DoomAdmin({ media, doom = {}, q = "", say, onDone }) {
   const [mins, setMins] = useState(doom.minutes || {});
   const [date, setDate] = useState(doom.date || "2026-12-16");
   const [dirty, setDirty] = useState(false);
+  const [imp, setImp] = useState(false);
+  const [busy, setBusy] = useState("");
   const by = Object.fromEntries(media.map((m) => [m.id, m]));
   const mark = (fn) => (...a) => { fn(...a); setDirty(true); };
   const add = mark((id) => id && !ids.includes(id) && setIds([...ids, id]));
   const del = mark((id) => setIds(ids.filter((x) => x !== id)));
   const move = mark((i, j) => { if (j < 0 || j >= ids.length) return; const a = [...ids]; const [x] = a.splice(i, 1); a.splice(j, 0, x); setIds(a); });
-  const setMin = mark((id, v) => setMins({ ...mins, [id]: Math.max(0, Math.round(Number(v) || 0)) }));
+  const setMin = mark((id, v) => setMins((p) => ({ ...p, [id]: Math.max(0, Math.round(Number(v) || 0)) })));
+  // la lista importata diventa l'ordine: i progetti già presenti e non nella lista restano in fondo
+  const applyList = (listed) => { const set = new Set(listed); setIds([...listed, ...ids.filter((x) => !set.has(x))]); setDirty(true); setImp(false); say("Lista applicata: premi Salva Road to Doomsday"); };
+  // Durata da TMDB: cerca direttamente per titolo e anno, senza bisogno che il titolo sia già collegato a TMDB nel catalogo
+  const getRuntime = async (m) => {
+    const qs = new URLSearchParams({ type: m.type, q: m.title, year: String(m.year || "").slice(0, 4) });
+    if (m.tmdbId) qs.set("id", m.tmdbId);
+    return (await api(`admin/tmdb-runtime?${qs}`)).minutes;
+  };
   const fromTmdb = async (m) => {
-    try { const r = await api(`admin/tmdb-runtime?id=${m.tmdbId || ""}&type=${m.type}`); setMin(m.id, r.minutes); }
+    try { setMin(m.id, await getRuntime(m)); }
     catch (e) { alert(e.data?.error || "Durata non trovata: scrivila a mano"); }
   };
+  const fillMissing = async () => {
+    const todo = ids.filter((id) => by[id] && !mins[id]);
+    let ok = 0;
+    for (let i = 0; i < todo.length; i++) {
+      setBusy(`TMDB ${i + 1}/${todo.length}…`);
+      try { setMin(todo[i], await getRuntime(by[todo[i]])); ok++; } catch {}
+    }
+    setBusy("");
+    say(`Durate trovate: ${ok} su ${todo.length}`);
+  };
   const total = ids.reduce((t, id) => t + (mins[id] || 0), 0);
+  const missing = ids.filter((id) => by[id] && !mins[id]).length;
   const save = async () => { try { await api("admin/doomsday", { body: { ids, minutes: mins, date } }); setDirty(false); say("Road to Doomsday salvata"); onDone?.(); } catch { alert("Salvataggio non riuscito"); } };
   return (
     <>
-      <p className="hint">Scegli i progetti da vedere prima di Avengers: Doomsday, nell'ordine consigliato, e indica la durata totale in minuti (il tasto TMDB la calcola da solo). La sezione resta visibile fino al 16 dicembre 2026.</p>
+      <p className="hint">Scegli i progetti da vedere prima di Avengers: Doomsday, nell'ordine consigliato, e indica la durata totale in minuti (il tasto TMDB la calcola da solo, anche se il titolo non è collegato a TMDB). La sezione resta visibile fino al 16 dicembre 2026.</p>
       <label className="hint">Data di uscita per il countdown (Italia)</label>
       <input className="in" type="date" value={date} onChange={(e) => { setDate(e.target.value); setDirty(true); }} />
       <select className="in" value="" onChange={(e) => add(e.target.value)}>
         <option value="">+ Aggiungi progetto…</option>
         {[...media].filter((m) => !ids.includes(m.id) && matchQ(m, q)).sort((a, b) => a.title.localeCompare(b.title)).map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
       </select>
-      <p className="hint">{ids.length} progetti · {Math.floor(total / 60)}h {total % 60}m totali</p>
+      <p className="hint">{ids.length} progetti · {Math.floor(total / 60)}h {total % 60}m totali{missing > 0 && ` · ${missing} senza durata`}</p>
       <button className="btn red small" disabled={!dirty} onClick={save}>Salva Road to Doomsday</button>
+      <button className="btn small" style={{ marginLeft: 8 }} onClick={() => setImp(!imp)}><I.Plus size={16} /> Importa lista</button>
+      {missing > 0 && <button className="btn small" style={{ marginLeft: 8 }} disabled={!!busy} onClick={fillMissing}>{busy || "↻ Durate mancanti da TMDB"}</button>}
+      {imp && <ImportList media={media} onApply={applyList} hint="Incolla un titolo per riga, nell'ordine in cui vanno visti." applyLabel="Applica lista" />}
       {ids.map((id, i) => by[id] && matchQ(by[id], q) && (
         <div className="item" key={id}>
           <b>{i + 1}. {by[id].title}</b>

@@ -142,9 +142,9 @@ function Stars({ value = 0, onRate }) {
   );
 }
 
-function Detail({ m, user, watch, toggle, say, rate }) {
+function Detail({ m, user, watch, toggle, say, rate, initSeason }) {
   const seasons = [...(m.seasons || [])].sort(byNum);
-  const [sid, setSid] = useState(seasons[0]?.id);
+  const [sid, setSid] = useState(seasons.some((x) => x.id === initSeason) ? initSeason : seasons[0]?.id);
   const [rep, setRep] = useState(false);
   const season = seasons.find((s) => s.id === sid);
   const seen = (id) => user.watched.includes(id);
@@ -205,10 +205,25 @@ function Detail({ m, user, watch, toggle, say, rate }) {
 function TimelineView({ media, timeline = [], out = [], user, go }) {
   const [mode, setMode] = useState("story");
   const rel = byRelease("asc");
-  const pos = (m) => { const i = timeline.indexOf(m.id); return i < 0 ? Infinity : i; };
-  const base = media.filter((m) => !out.includes(m.id));
-  const items = [...base].sort(mode === "story" ? (a, b) => (pos(a) === pos(b) ? rel(a, b) : pos(a) - pos(b)) : rel);
-  const pct = items.length ? Math.round((items.filter((m) => user.watched?.includes(m.id)).length / items.length) * 100) : 0;
+  const byId = Object.fromEntries(media.map((m) => [m.id, m]));
+  // voci: ogni titolo intero + le singole stagioni inserite a mano ("mediaId~seasonId")
+  const all = [
+    ...media.map((m) => ({ key: m.id, m, s: null })),
+    ...timeline.filter((k) => k.includes("~")).map((k) => {
+      const [mid, sid] = k.split("~"), m = byId[mid], s = m?.seasons?.find((x) => x.id === sid);
+      return m && s ? { key: k, m, s } : null;
+    }).filter(Boolean),
+  ];
+  const pos = (e) => { const i = timeline.indexOf(e.key); return i < 0 ? Infinity : i; };
+  const byRel = (a, b) => rel(a.m, b.m) || (a.s?.number || 0) - (b.s?.number || 0);
+  const items = all.filter((e) => !out.includes(e.key)).sort(mode === "story" ? (a, b) => (pos(a) === pos(b) ? byRel(a, b) : pos(a) - pos(b)) : byRel);
+  const isSeen = ({ m, s }) => {
+    if (user.watched?.includes(m.id)) return true;
+    if (!s) return false;
+    const eps = (s.episodes || []).filter((e) => e.hasVideo);
+    return eps.length > 0 && eps.every((e) => user.watched?.includes(e.id));
+  };
+  const pct = items.length ? Math.round((items.filter(isSeen).length / items.length) * 100) : 0;
   return (
     <div className="page tva">
       <div className="tva-scan" />
@@ -223,15 +238,16 @@ function TimelineView({ media, timeline = [], out = [], user, go }) {
       </div>
       <div className="tva-line">
         <div className="tva-spine" />
-        {items.map((m, i) => {
-          const seen = user.watched?.includes(m.id);
+        {items.map((e, i) => {
+          const { m, s } = e, seen = isSeen(e);
+          const poster = (s && (s.cover ? imgUrl(s.cover) : s.coverUrl)) || art(m, "poster");
           return (
-            <div key={m.id} className={"tnode " + (i % 2 ? "r" : "l")}>
-              <button className="tcard" onClick={() => go({ n: "media", id: m.id })}>
-                <span className="tposter" style={{ backgroundImage: `url(${art(m, "poster")})` }} />
+            <div key={e.key} className={"tnode " + (i % 2 ? "r" : "l")}>
+              <button className="tcard" onClick={() => go({ n: "media", id: m.id, season: s?.id })}>
+                <span className="tposter" style={{ backgroundImage: `url(${poster})` }} />
                 <span className="tinfo">
                   <small>FILE #{String(i + 1).padStart(3, "0")}{m.year ? ` · ${m.year}` : ""}</small>
-                  <b>{m.title}</b>
+                  <b>{m.title}{s ? ` · ${s.name || `Stagione ${s.number}`}` : ""}</b>
                   <em>{seen ? "▣ OSSERVATO" : "▢ NON OSSERVATO"}</em>
                 </span>
               </button>
@@ -255,7 +271,7 @@ const DoomMask = () => (
   <svg className="dm-mask" viewBox="112 24 328 486" fill="none" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
     <defs>
       <linearGradient id="dmg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f1f6f3" /><stop offset="1" stopColor="#8fa59a" /></linearGradient>
-      <radialGradient id="dmglow" cx="50%" cy="45%" r="60%"><stop offset="0" stopColor="#7be0a4" stopOpacity=".22" /><stop offset="1" stopColor="#7be0a4" stopOpacity="0" /></radialGradient>
+      <radialGradient id="dmglow" cx="50%" cy="45%" r="60%"><stop offset="0" stopColor="#1fe06a" stopOpacity=".22" /><stop offset="1" stopColor="#1fe06a" stopOpacity="0" /></radialGradient>
     </defs>
     <ellipse cx="276" cy="268" rx="170" ry="250" fill="url(#dmglow)" />
     {/* sagoma del viso (misurata sulla foto di riferimento) */}
@@ -269,8 +285,8 @@ const DoomMask = () => (
     <path d="M133 229 Q160 212 200 217 Q240 228 268 247" stroke="url(#dmg)" strokeWidth="2.5" />
     <path d="M418 229 Q391 212 351 217 Q311 228 283 247" stroke="url(#dmg)" strokeWidth="2.5" />
     {/* occhi */}
-    <path d="M155 236 L252 241 L250 281 L158 281 Z" fill="#7be0a4" stroke="url(#dmg)" strokeWidth="3" />
-    <path d="M396 236 L299 241 L301 281 L393 281 Z" fill="#7be0a4" stroke="url(#dmg)" strokeWidth="3" />
+    <path d="M155 236 L252 241 L250 281 L158 281 Z" fill="#1fe06a" stroke="url(#dmg)" strokeWidth="3" />
+    <path d="M396 236 L299 241 L301 281 L393 281 Z" fill="#1fe06a" stroke="url(#dmg)" strokeWidth="3" />
     <path d="M158 295 L248 295" stroke="#dfe8e2" strokeWidth="6" strokeDasharray="0 12" />
     <path d="M303 295 L393 295" stroke="#dfe8e2" strokeWidth="6" strokeDasharray="0 12" />
     {/* naso sfaccettato */}
@@ -656,7 +672,7 @@ export default function App() {
           </div>
         </div>
       );
-    } else if (view.n === "media" && find(view.id)) body = <Detail m={find(view.id)} user={user} watch={watch} toggle={toggle} say={say} rate={rate} />;
+    } else if (view.n === "media" && find(view.id)) body = <Detail key={view.id + (view.season || "")} m={find(view.id)} user={user} watch={watch} toggle={toggle} say={say} rate={rate} initSeason={view.season} />;
     else if (view.n === "coll") body = <div className="page"><h1 className="ptitle">{view.title}</h1><Grid items={media.filter((m) => view.ids.includes(m.id)).sort(byRelease("asc"))} go={go} user={user} /></div>;
     else if (view.n === "cat") {
       const c = categories.find((x) => x.id === view.id);
