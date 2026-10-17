@@ -370,6 +370,104 @@ function LinkCheck() {
   );
 }
 
+// ---------- Ordine cronologico ----------
+function Timeline({ media, timeline = [], out: outInit = [], say, onDone }) {
+  const rel = byRelease("asc");
+  const pos = (m) => { const i = timeline.indexOf(m.id); return i < 0 ? Infinity : i; };
+  const [ids, setIds] = useState(() => [...media].sort((a, b) => (pos(a) === pos(b) ? rel(a, b) : pos(a) - pos(b))).map((m) => m.id));
+  const [dirty, setDirty] = useState(false);
+  const [out, setOut] = useState(outInit);
+  const toggleOut = (id) => { setOut(out.includes(id) ? out.filter((x) => x !== id) : [...out, id]); setDirty(true); };
+  const by = Object.fromEntries(media.map((m) => [m.id, m]));
+  const move = (i, j) => {
+    if (j < 0 || j >= ids.length || i === j) return;
+    const a = [...ids]; const [x] = a.splice(i, 1); a.splice(j, 0, x);
+    setIds(a); setDirty(true);
+  };
+  const save = async () => { try { await api("admin/timeline", { body: { ids, out } }); setDirty(false); say("Ordine cronologico salvato"); onDone?.(); } catch { alert("Salvataggio non riuscito"); } };
+  return (
+    <>
+      <p className="hint">Ordine cronologico (storia) della TIMELINE MARVEL: frecce, oppure scrivi la posizione e premi invio. Con "Escludi" un titolo sparisce dalla timeline (sia cronologica sia di uscita). Poi salva.</p>
+      <button className="btn red small" disabled={!dirty} onClick={save}>Salva ordine</button>
+      {ids.map((id, i) => by[id] && (
+        <div className="item" key={id} style={out.includes(id) ? { opacity: 0.45 } : undefined}>
+          <input className="in sm" type="number" min="1" max={ids.length} defaultValue={i + 1} key={i + ":" + id} title="Posizione"
+            onKeyDown={(e) => e.key === "Enter" && move(i, Math.min(ids.length, Math.max(1, +e.target.value || 1)) - 1)} />
+          <b>{by[id].title}</b> <small>{by[id].year}</small>
+          <div className="actions">
+            <button className="btn small" onClick={() => toggleOut(id)}>{out.includes(id) ? "Includi" : "Escludi"}</button>
+            <button className="btn small" onClick={() => move(i, i - 1)}><I.ArrowUp size={16} /></button>
+            <button className="btn small" onClick={() => move(i, i + 1)}><I.ArrowDown size={16} /></button>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ---------- Visibilità di una novità ----------
+function Vis({ k, features = {}, say, onDone }) {
+  const cur = features[k] ?? "admin";
+  const set = async (value) => { try { await api("admin/features", { body: { key: k, value } }); say(value === "all" ? "Ora è pubblica per tutti" : value === "admin" ? "Visibile solo agli admin" : "Nascosta"); onDone?.(); } catch { alert("Errore"); } };
+  return (
+    <div className="box">
+      <b>Visibilità</b>
+      <div className="chips">
+        {[["off", "Nascosta"], ["admin", "Solo admin"], ["all", "Pubblica"]].map(([v, l]) => <button key={v} className={"chip" + (cur === v ? " on" : "")} onClick={() => set(v)}>{l}</button>)}
+      </div>
+      {cur !== "all" && <p className="hint">Gli utenti non la vedono. Quando è pronta, premi <b>Pubblica</b>.</p>}
+    </div>
+  );
+}
+
+// ---------- Road to Doomsday ----------
+function DoomAdmin({ media, doom = {}, say, onDone }) {
+  const [ids, setIds] = useState(doom.ids || []);
+  const [mins, setMins] = useState(doom.minutes || {});
+  const [date, setDate] = useState(doom.date || "2026-12-16");
+  const [dirty, setDirty] = useState(false);
+  const by = Object.fromEntries(media.map((m) => [m.id, m]));
+  const mark = (fn) => (...a) => { fn(...a); setDirty(true); };
+  const add = mark((id) => id && !ids.includes(id) && setIds([...ids, id]));
+  const del = mark((id) => setIds(ids.filter((x) => x !== id)));
+  const move = mark((i, j) => { if (j < 0 || j >= ids.length) return; const a = [...ids]; const [x] = a.splice(i, 1); a.splice(j, 0, x); setIds(a); });
+  const setMin = mark((id, v) => setMins({ ...mins, [id]: Math.max(0, Math.round(Number(v) || 0)) }));
+  const fromTmdb = async (m) => {
+    try { const r = await api(`admin/tmdb-runtime?id=${m.tmdbId || ""}&type=${m.type}`); setMin(m.id, r.minutes); }
+    catch (e) { alert(e.data?.error || "Durata non trovata: scrivila a mano"); }
+  };
+  const total = ids.reduce((t, id) => t + (mins[id] || 0), 0);
+  const save = async () => { try { await api("admin/doomsday", { body: { ids, minutes: mins, date } }); setDirty(false); say("Road to Doomsday salvata"); onDone?.(); } catch { alert("Salvataggio non riuscito"); } };
+  return (
+    <>
+      <p className="hint">Scegli i progetti da vedere prima di Avengers: Doomsday, nell'ordine consigliato, e indica la durata totale in minuti (il tasto TMDB la calcola da solo). La sezione resta visibile fino al 16 dicembre 2026.</p>
+      <label className="hint">Data di uscita per il countdown (Italia)</label>
+      <input className="in" type="date" value={date} onChange={(e) => { setDate(e.target.value); setDirty(true); }} />
+      <select className="in" value="" onChange={(e) => add(e.target.value)}>
+        <option value="">+ Aggiungi progetto…</option>
+        {[...media].filter((m) => !ids.includes(m.id)).sort((a, b) => a.title.localeCompare(b.title)).map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
+      </select>
+      <p className="hint">{ids.length} progetti · {Math.floor(total / 60)}h {total % 60}m totali</p>
+      <button className="btn red small" disabled={!dirty} onClick={save}>Salva Road to Doomsday</button>
+      {ids.map((id, i) => by[id] && (
+        <div className="item" key={id}>
+          <b>{i + 1}. {by[id].title}</b>
+          <div className="row2">
+            <input className="in sm" type="number" min="0" placeholder="minuti" value={mins[id] || ""} onChange={(e) => setMin(id, e.target.value)} />
+            <small>min</small>
+            <button className="btn small" onClick={() => fromTmdb(by[id])}>↻ TMDB</button>
+          </div>
+          <div className="actions">
+            <button className="btn small" onClick={() => move(i, i - 1)}><I.ArrowUp size={16} /></button>
+            <button className="btn small" onClick={() => move(i, i + 1)}><I.ArrowDown size={16} /></button>
+            <button className="btn small" onClick={() => del(id)}><I.Trash size={16} /></button>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 // ---------- Backup ----------
 function Backup({ say }) {
   const [busy, setBusy] = useState(false);
@@ -465,12 +563,14 @@ export default function Admin({ say, onChange }) {
       <div className="chips">
         <button className={"chip" + (tab === "media" ? " on" : "")} onClick={() => setTab("media")}>Contenuti</button>
         <button className={"chip" + (tab === "cats" ? " on" : "")} onClick={() => setTab("cats")}>Categorie</button>
+        <button className={"chip" + (tab === "timeline" ? " on" : "")} onClick={() => setTab("timeline")}>Timeline</button>
+        <button className={"chip" + (tab === "doom" ? " on" : "")} onClick={() => setTab("doom")}>Doomsday</button>
         <button className={"chip" + (tab === "autolink" ? " on" : "")} onClick={() => setTab("autolink")}>Da collegare</button>
         <button className={"chip" + (tab === "requests" ? " on" : "")} onClick={() => setTab("requests")}>Richieste</button>
         <button className={"chip" + (tab === "reports" ? " on" : "")} onClick={() => setTab("reports")}>Segnalazioni</button>
         <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
-      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Stats /><Backup say={say} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
+      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Stats /><Backup say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
           {[...db.media].sort((a, b) => b.createdAt - a.createdAt).map((m) => (

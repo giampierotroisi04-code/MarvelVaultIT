@@ -201,6 +201,157 @@ function Detail({ m, user, watch, toggle, say, rate }) {
   );
 }
 
+// ---------- TIMELINE MARVEL (stile monitor TVA) ----------
+function TimelineView({ media, timeline = [], out = [], user, go }) {
+  const [mode, setMode] = useState("story");
+  const rel = byRelease("asc");
+  const pos = (m) => { const i = timeline.indexOf(m.id); return i < 0 ? Infinity : i; };
+  const base = media.filter((m) => !out.includes(m.id));
+  const items = [...base].sort(mode === "story" ? (a, b) => (pos(a) === pos(b) ? rel(a, b) : pos(a) - pos(b)) : rel);
+  const seenIdx = items.reduce((last, m, i) => (user.watched?.includes(m.id) ? i : last), -1);
+  const pct = items.length ? Math.round((items.filter((m) => user.watched?.includes(m.id)).length / items.length) * 100) : 0;
+  return (
+    <div className="page tva">
+      <div className="tva-scan" />
+      <div className="tva-head">
+        <small>T.V.A. · AUTORITÀ VARIAZIONE TEMPORALE</small>
+        <h1>TIMELINE MARVEL</h1>
+        <div className="tva-mode">
+          <button className={mode === "story" ? "on" : ""} onClick={() => setMode("story")}>Cronologico (Storia)</button>
+          <button className={mode === "release" ? "on" : ""} onClick={() => setMode("release")}>Di uscita</button>
+        </div>
+        <div className="tva-stat"><span>LINEA SACRA OSSERVATA</span><b>{pct}%</b></div>
+      </div>
+      <div className="tva-line">
+        <div className="tva-spine"><i style={{ height: seenIdx < 0 ? 0 : `calc(${((seenIdx + 0.5) / Math.max(items.length, 1)) * 100}%)` }} /></div>
+        {items.map((m, i) => {
+          const seen = user.watched?.includes(m.id);
+          return (
+            <div key={m.id} className={"tnode " + (i % 2 ? "r" : "l") + (seen ? " seen" : "")}>
+              <button className="tcard" onClick={() => go({ n: "media", id: m.id })}>
+                <span className="tposter" style={{ backgroundImage: `url(${art(m, "poster")})` }} />
+                <span className="tinfo">
+                  <small>FILE #{String(i + 1).padStart(3, "0")}{m.year ? ` · ${m.year}` : ""}</small>
+                  <b>{m.title}</b>
+                  <em>{seen ? "▣ OSSERVATO" : "▢ NON OSSERVATO"}</em>
+                </span>
+              </button>
+              <span className="tdot" />
+            </div>
+          );
+        })}
+      </div>
+      {!items.length && <p className="hint">Nessun titolo nella timeline.</p>}
+    </div>
+  );
+}
+
+// ---------- ROAD TO DOOMSDAY (stile Doctor Doom) ----------
+const DOOM_OPEN_UNTIL = Date.parse("2026-12-16T23:59:59+01:00"); // la sezione sparisce dopo il 16 dicembre
+const CALC_UNTIL = Date.parse("2026-12-15T23:59:59+01:00");     // il piano si calcola fino al 15 dicembre
+const fmtH = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60); return `${h}h ${String(m).padStart(2, "0")}m`; };
+const readHpd = () => { try { return Number(localStorage.getItem("doom_hpd")) || 0; } catch { return 0; } };
+
+function DoomView({ media, doom = {}, user, go, watch }) {
+  const [now, setNow] = useState(Date.now());
+  const [hpd, setHpd] = useState(readHpd());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const rel = new Date(`${doom.date || "2026-12-16"}T00:00:00+01:00`).getTime();
+  const left = Math.max(0, rel - now);
+  const d = Math.floor(left / 86400000), h = Math.floor((left % 86400000) / 3600000), mi = Math.floor((left % 3600000) / 60000), sc = Math.floor((left % 60000) / 1000);
+
+  const picks = (doom.ids || []).map((id) => media.find((m) => m.id === id)).filter(Boolean).map((m) => {
+    const total = doom.minutes?.[m.id] || 0;
+    let rem = total;
+    if (user.watched?.includes(m.id)) rem = 0;
+    else if (m.type === "series") {
+      const eps = (m.seasons || []).flatMap((x) => x.episodes).filter((e) => e.hasVideo);
+      if (eps.length) rem = Math.round(total * (eps.filter((e) => !user.watched?.includes(e.id)).length / eps.length));
+    }
+    return { m, total, rem, done: rem === 0 && user.watched?.includes(m.id) };
+  });
+  const remaining = picks.reduce((t, x) => t + x.rem, 0);
+  const next = picks.find((x) => !x.done && x.rem > 0) || picks.find((x) => !x.done);
+  const daysLeft = Math.max(1, Math.ceil((CALC_UNTIL - now) / 86400000));
+  const need = remaining / 60 / daysLeft;               // ore al giorno necessarie
+  const rec = Math.max(0.5, Math.ceil(need * 2) / 2);   // consigliato, a passi di mezz'ora
+  const perDay = (hpd || rec) * 60;
+
+  // piano: riempie ogni giorno fino al limite di ore, in ordine, fino al 15 dicembre
+  const plan = [];
+  let queue = picks.filter((x) => x.rem > 0).map((x) => ({ title: x.m.title, left: x.rem, id: x.m.id }));
+  for (let i = 0; i < daysLeft && queue.length; i++) {
+    let budget = perDay; const day = [];
+    while (budget > 0 && queue.length) {
+      const q = queue[0], take = Math.min(budget, q.left);
+      day.push({ title: q.title, id: q.id, min: take, part: take < q.left || q.left < (picks.find((x) => x.m.id === q.id)?.total || 0) });
+      q.left -= take; budget -= take;
+      if (q.left <= 0) queue.shift();
+    }
+    plan.push({ date: new Date(now + i * 86400000), items: day });
+  }
+  const fits = queue.length === 0;
+  const setH = (v) => { const n = Math.min(12, Math.max(0.5, v)); setHpd(n); try { localStorage.setItem("doom_hpd", String(n)); } catch {} };
+
+  return (
+    <div className="page doom">
+      <div className="doom-head">
+        <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M12 2c-4.4 0-7.5 3.2-7.5 7.6V19l3.5 3h8l3.5-3V9.6C19.5 5.2 16.4 2 12 2z" /><path d="M7.5 10.5l3 1.2M16.5 10.5l-3 1.2M12 13.5v3.5M9.5 19h5" /></svg>
+        <small>LATVERIA · DECRETO DI VON DOOM</small>
+        <h1>ROAD TO DOOMSDAY</h1>
+      </div>
+
+      <div className="doom-cd">
+        <small>AVENGERS: DOOMSDAY · USCITA IN</small>
+        <div className="cdgrid">
+          {[["GIORNI", d], ["ORE", h], ["MIN", mi], ["SEC", sc]].map(([l, v]) => <div key={l}><b>{String(v).padStart(2, "0")}</b><span>{l}</span></div>)}
+        </div>
+      </div>
+
+      <div className="doom-two">
+        <div className="doom-box"><small>ORE ANCORA DA VEDERE</small><b>{fmtH(remaining)}</b></div>
+        <div className="doom-box"><small>PROSSIMO DA VEDERE</small><b className="nx">{next ? next.m.title : "Tutto visto 👑"}</b>
+          {next && <button className="doom-go" onClick={() => (next.m.type === "movie" ? watch(next.m.id) : go({ n: "media", id: next.m.id }))}>{next.m.type === "movie" ? "Guarda ora" : "Apri"}</button>}
+        </div>
+      </div>
+
+      {!picks.length ? <p className="hint">Nessun progetto scelto per la Road to Doomsday.</p> : (
+        <>
+          <h2 className="doom-h">I TUOI SUDDITI DA VEDERE</h2>
+          <div className="doom-list">
+            {picks.map(({ m, total, rem, done }, i) => (
+              <button key={m.id} className={"dpick" + (done ? " done" : "")} onClick={() => go({ n: "media", id: m.id })}>
+                <span className="dn">{i + 1}</span>
+                <span className="dth" style={{ backgroundImage: `url(${art(m, "poster")})` }} />
+                <span className="di"><b>{m.title}</b><small>{total ? `${fmtH(total)}${rem !== total && rem > 0 ? ` · restano ${fmtH(rem)}` : ""}` : "durata mancante"}</small></span>
+                {done && <span className="dok"><I.Check size={16} /></span>}
+              </button>
+            ))}
+          </div>
+
+          <h2 className="doom-h">IL TUO CALENDARIO (fino al 15 dicembre)</h2>
+          <div className="doom-plan-ctl">
+            <span>Ore al giorno</span>
+            <div><button onClick={() => setH((hpd || rec) - 0.5)}>−</button><b>{(hpd || rec).toString().replace(".", ",")}h</b><button onClick={() => setH((hpd || rec) + 0.5)}>+</button></div>
+            <button className="doom-rec" onClick={() => setH(rec)}>Consigliato: {rec.toString().replace(".", ",")}h</button>
+          </div>
+          {remaining === 0 ? <p className="hint">Hai già visto tutto. Sei pronto per Doomsday. 👑</p>
+            : !fits ? <p className="doom-warn">Con {(hpd || rec).toString().replace(".", ",")}h al giorno non finisci entro il 15 dicembre: servono almeno {need.toFixed(1).replace(".", ",")}h al giorno.</p>
+            : <p className="hint">Finisci il {plan[plan.length - 1].date.toLocaleDateString("it-IT", { day: "numeric", month: "long" })}, in tempo per Doomsday.</p>}
+          <div className="doom-plan">
+            {plan.map((p, i) => (
+              <div key={i} className="dday">
+                <div className="dd"><b>{p.date.toLocaleDateString("it-IT", { day: "numeric" })}</b><small>{p.date.toLocaleDateString("it-IT", { weekday: "short", month: "short" })}</small></div>
+                <div className="dl">{p.items.map((it, j) => <div key={j}><span>{it.title}{it.part ? " (parte)" : ""}</span><em>{fmtH(it.min)}</em></div>)}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- Continua a guardare ----------
 function Continue({ recent = [], media, watch, go, watched = [] }) {
   const rows = recent.map((r) => {
@@ -354,7 +505,7 @@ export default function App() {
     return () => tg.BackButton.offClick(back);
   }, [stack.length]);
 
-  const { media = [], categories = [], user = { watchlist: [], watched: [] }, me } = boot;
+  const { media = [], categories = [], timeline = [], timelineOut = [], doomsday, features = {}, user = { watchlist: [], watched: [] }, me } = boot;
 
   const watch = async (mediaId, episodeId) => {
     try {
@@ -469,11 +620,13 @@ export default function App() {
         </div>
       );
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
+    else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} />;
+    else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} />;
     else if (view.n === "list") body = <div className="page"><h1 className="ptitle">La mia lista</h1><Grid items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} /></div>;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 
-  const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ["list", I.Bookmark, "Lista"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
+  const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ...(features.timeline ? [["timeline", I.Clock, "Timeline"]] : []), ...(features.doom && Date.now() <= DOOM_OPEN_UNTIL ? [["doom", I.Mask, "Doomsday"]] : []), ["list", I.Bookmark, "Lista"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
   return (
     <>
       {splash && <div className="splash"><img src={logo} alt="" /><div className="tri" /></div>}
