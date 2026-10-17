@@ -252,38 +252,42 @@ const fmtH = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60)
 const readHpd = () => { try { return Number(localStorage.getItem("doom_hpd")) || 0; } catch { return 0; } };
 
 const DoomMask = () => (
-  <svg className="dm-mask" viewBox="0 0 64 60" fill="none" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+  <svg className="dm-mask" viewBox="112 24 328 486" fill="none" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
     <defs>
       <linearGradient id="dmg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f1f6f3" /><stop offset="1" stopColor="#8fa59a" /></linearGradient>
-      <radialGradient id="dmglow" cx="50%" cy="45%" r="55%"><stop offset="0" stopColor="#7be0a4" stopOpacity=".25" /><stop offset="1" stopColor="#7be0a4" stopOpacity="0" /></radialGradient>
+      <radialGradient id="dmglow" cx="50%" cy="45%" r="60%"><stop offset="0" stopColor="#7be0a4" stopOpacity=".22" /><stop offset="1" stopColor="#7be0a4" stopOpacity="0" /></radialGradient>
     </defs>
-    <ellipse cx="32" cy="30" rx="30" ry="30" fill="url(#dmglow)" />
-    {/* placca del viso */}
-    <path d="M32 4 C25.5 4 21 5.5 18.8 8.2 L15.2 22 L16.6 34 L23.4 45.2 L27.2 55 L36.8 55 L40.6 45.2 L47.4 34 L48.8 22 L45.2 8.2 C43 5.5 38.5 4 32 4 Z" fill="#0c1511" stroke="url(#dmg)" strokeWidth="1.5" />
-    {/* calotta della fronte: bordo a V con i rivetti */}
-    <path d="M18.8 8.2 C21 5.5 25.5 4 32 4 C38.5 4 43 5.5 45.2 8.2 Q38 11.5 32 14.5 Q26 11.5 18.8 8.2 Z" fill="#18231e" stroke="url(#dmg)" strokeWidth="1" />
-    <path d="M18.8 8.2 Q26 11.5 32 14.5 Q38 11.5 45.2 8.2" stroke="#dfe8e2" strokeWidth="1" strokeDasharray="0 1.6" />
-    {/* arcate sopraccigliari */}
-    <path d="M15.4 22.5 Q22 22.6 31.6 25.4" stroke="url(#dmg)" strokeWidth="1" />
-    <path d="M48.6 22.5 Q42 22.6 32.4 25.4" stroke="url(#dmg)" strokeWidth="1" />
+    <ellipse cx="276" cy="268" rx="170" ry="250" fill="url(#dmglow)" />
+    {/* sagoma del viso (misurata sulla foto di riferimento) */}
+    <path d="M257.7 29.0 L236.2 35.0 L217.4 41.0 L200.9 47.0 L187.3 53.0 L178.4 59.0 L169.4 65.0 L163.2 71.0 L159.6 77.0 L156.1 83.0 L153.0 89.0 L149.0 95.0 L145.8 101.0 L142.1 107.0 L138.8 113.0 L136.4 119.0 L133.8 125.0 L132.2 131.0 L131.1 137.0 L129.4 143.0 L127.9 149.0 L127.2 155.0 L125.6 161.0 L124.5 167.0 L123.9 173.0 L122.7 179.0 L121.7 185.0 L121.0 191.0 L120.1 197.0 L119.1 203.0 L118.4 209.0 L117.9 215.0 L117.1 221.0 L117.1 227.0 L116.5 233.0 L116.2 239.0 L116.2 245.0 L115.6 251.0 L115.3 257.0 L115.6 263.0 L115.1 269.0 L115.2 275.0 L115.7 281.0 L115.9 287.0 L116.6 293.0 L118.2 299.0 L122.0 305.0 L125.6 311.0 L128.4 317.0 L130.1 323.0 L131.7 329.0 L133.3 335.0 L134.9 341.0 L136.3 347.0 L137.7 353.0 L139.1 359.0 L140.5 365.0 L142.0 371.0 L143.5 377.0 L145.0 383.0 L146.5 389.0 L147.6 395.0 L148.6 401.0 L149.6 407.0 L150.6 413.0 L151.7 419.0 L153.2 425.0 L155.1 431.0 L157.8 437.0 L161.1 443.0 L165.4 449.0 L171.0 455.0 L178.0 461.0 L185.5 467.0 L200.5 480.0 L210.5 490.0 L218.5 500.0 L222.5 506.0 L328.5 506.0 L332.5 500.0 L340.5 490.0 L350.5 480.0 L365.5 467.0 L373.0 461.0 L380.0 455.0 L385.6 449.0 L389.9 443.0 L393.2 437.0 L395.9 431.0 L397.8 425.0 L399.3 419.0 L400.4 413.0 L401.4 407.0 L402.4 401.0 L403.4 395.0 L404.5 389.0 L406.0 383.0 L407.5 377.0 L409.0 371.0 L410.5 365.0 L411.9 359.0 L413.3 353.0 L414.7 347.0 L416.1 341.0 L417.7 335.0 L419.3 329.0 L420.9 323.0 L422.6 317.0 L425.4 311.0 L429.0 305.0 L432.8 299.0 L434.4 293.0 L435.1 287.0 L435.3 281.0 L435.8 275.0 L435.9 269.0 L435.4 263.0 L435.7 257.0 L435.4 251.0 L434.8 245.0 L434.8 239.0 L434.5 233.0 L433.9 227.0 L433.9 221.0 L433.1 215.0 L432.6 209.0 L431.9 203.0 L430.9 197.0 L430.0 191.0 L429.3 185.0 L428.3 179.0 L427.1 173.0 L426.5 167.0 L425.4 161.0 L423.8 155.0 L423.1 149.0 L421.6 143.0 L419.9 137.0 L418.8 131.0 L417.2 125.0 L414.6 119.0 L412.2 113.0 L408.9 107.0 L405.2 101.0 L402.0 95.0 L398.0 89.0 L394.9 83.0 L391.4 77.0 L387.8 71.0 L381.6 65.0 L372.6 59.0 L363.7 53.0 L350.1 47.0 L333.6 41.0 L314.8 35.0 L293.3 29.0 Z" fill="#0c1511" stroke="url(#dmg)" strokeWidth="4" />
+    {/* calotta della fronte con il bordo a V rivettato */}
+    <path d="M257.7 29.0 L236.2 35.0 L217.4 41.0 L200.9 47.0 L187.3 53.0 L178.4 59.0 L169.4 65.0 L163.2 71.0 L172 70 L176 108 Q200 128 250 148 L275 155 L300 148 Q350 128 374 108 L378 70 L387.8 71.0 L381.6 65.0 L372.6 59.0 L363.7 53.0 L350.1 47.0 L333.6 41.0 L314.8 35.0 L293.3 29.0 Z" fill="#18231e" stroke="url(#dmg)" strokeWidth="2.5" />
+    <path d="M172 70 L176 108 Q200 128 250 148 L275 155 L300 148 Q350 128 374 108 L378 70" stroke="#dfe8e2" strokeWidth="6" strokeDasharray="0 12" />
+    {/* arcate sopraccigliari rivettate */}
+    <path d="M133 229 Q160 212 200 217 Q240 228 268 247" stroke="#dfe8e2" strokeWidth="6" strokeDasharray="0 12" />
+    <path d="M418 229 Q391 212 351 217 Q311 228 283 247" stroke="#dfe8e2" strokeWidth="6" strokeDasharray="0 12" />
+    <path d="M133 229 Q160 212 200 217 Q240 228 268 247" stroke="url(#dmg)" strokeWidth="2.5" />
+    <path d="M418 229 Q391 212 351 217 Q311 228 283 247" stroke="url(#dmg)" strokeWidth="2.5" />
     {/* occhi */}
-    <path d="M18.4 24.4 L30.8 26.6 L30.5 30.4 L19.4 29.8 Z" fill="#7be0a4" stroke="url(#dmg)" strokeWidth="1" />
-    <path d="M45.6 24.4 L33.2 26.6 L33.5 30.4 L44.6 29.8 Z" fill="#7be0a4" stroke="url(#dmg)" strokeWidth="1" />
-    <path d="M20 32 Q25 32.6 30.2 32.2" stroke="#dfe8e2" strokeWidth="1" strokeDasharray="0 1.6" />
-    <path d="M44 32 Q39 32.6 33.8 32.2" stroke="#dfe8e2" strokeWidth="1" strokeDasharray="0 1.6" />
+    <path d="M155 236 L252 241 L250 281 L158 281 Z" fill="#7be0a4" stroke="url(#dmg)" strokeWidth="3" />
+    <path d="M396 236 L299 241 L301 281 L393 281 Z" fill="#7be0a4" stroke="url(#dmg)" strokeWidth="3" />
+    <path d="M158 295 L248 295" stroke="#dfe8e2" strokeWidth="6" strokeDasharray="0 12" />
+    <path d="M303 295 L393 295" stroke="#dfe8e2" strokeWidth="6" strokeDasharray="0 12" />
     {/* naso sfaccettato */}
-    <path d="M32 24.8 L28.4 36.6 L32 39.6 L35.6 36.6 Z" fill="#0c1511" stroke="url(#dmg)" strokeWidth="1.1" />
-    <path d="M28.4 36.6 L32 31.2 L35.6 36.6 M32 31.2 V39.6" stroke="url(#dmg)" strokeWidth=".7" opacity=".7" />
+    <path d="M259 250 L292 250 L312 325 L276 356 L240 325 Z" fill="#0c1511" stroke="url(#dmg)" strokeWidth="3" />
+    <path d="M240 325 L276 340 L312 325 M276 252 V340" stroke="url(#dmg)" strokeWidth="2" opacity=".7" />
     {/* piani delle guance */}
-    <path d="M17 33.5 L24 41.6 L27.4 46.5" stroke="url(#dmg)" strokeWidth=".9" opacity=".8" />
-    <path d="M47 33.5 L40 41.6 L36.6 46.5" stroke="url(#dmg)" strokeWidth=".9" opacity=".8" />
-    {/* bocca a "broncio" con griglia centrale */}
-    <path d="M24.4 42.6 Q32 40 39.6 42.6 L38.8 46 Q32 43.6 25.2 46 Z" fill="#050a08" stroke="url(#dmg)" strokeWidth="1.1" />
-    <path d="M29.2 41.4v2.6M31 41.2v2.7M33 41.2v2.7M34.8 41.4v2.6" stroke="url(#dmg)" strokeWidth=".8" />
-    <path d="M25.2 46 Q32 43.6 38.8 46" stroke="#dfe8e2" strokeWidth="1" strokeDasharray="0 1.6" />
+    <path d="M134 312 Q146 350 168 398" stroke="url(#dmg)" strokeWidth="2.5" opacity=".75" />
+    <path d="M417 312 Q405 350 383 398" stroke="url(#dmg)" strokeWidth="2.5" opacity=".75" />
+    {/* bocca a broncio con griglia */}
+    <path d="M207 388 Q240 374 276 374 Q311 374 344 388 L350 414 Q312 404 276 404 Q240 404 202 414 Z" fill="#050a08" stroke="url(#dmg)" strokeWidth="3" />
+    <path d="M228 396 H324 V404 H228 Z" fill="#0e1814" stroke="url(#dmg)" strokeWidth="2" />
+    <path d="M246 396V404M264 396V404M288 396V404M306 396V404" stroke="url(#dmg)" strokeWidth="2" />
+    <path d="M212 413 Q245 404 276 404 Q307 404 339 413" stroke="#dfe8e2" strokeWidth="6" strokeDasharray="0 12" />
     {/* mento */}
-    <path d="M27.3 47.4 L36.7 47.4 L35.8 55 L28.2 55 Z" fill="#0e1814" stroke="url(#dmg)" strokeWidth="1.1" />
-    <path d="M32 47.4V55" stroke="url(#dmg)" strokeWidth=".7" opacity=".7" />
+    <path d="M243 416 L309 416 L316 506 L236 506 Z" fill="#0e1814" stroke="url(#dmg)" strokeWidth="3" />
+    <path d="M243 432 H309" stroke="url(#dmg)" strokeWidth="2.5" />
+    <path d="M276 432V506" stroke="url(#dmg)" strokeWidth="2" opacity=".6" />
   </svg>
 );
 
