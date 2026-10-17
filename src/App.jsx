@@ -208,7 +208,6 @@ function TimelineView({ media, timeline = [], out = [], user, go }) {
   const pos = (m) => { const i = timeline.indexOf(m.id); return i < 0 ? Infinity : i; };
   const base = media.filter((m) => !out.includes(m.id));
   const items = [...base].sort(mode === "story" ? (a, b) => (pos(a) === pos(b) ? rel(a, b) : pos(a) - pos(b)) : rel);
-  const seenIdx = items.reduce((last, m, i) => (user.watched?.includes(m.id) ? i : last), -1);
   const pct = items.length ? Math.round((items.filter((m) => user.watched?.includes(m.id)).length / items.length) * 100) : 0;
   return (
     <div className="page tva">
@@ -223,11 +222,11 @@ function TimelineView({ media, timeline = [], out = [], user, go }) {
         <div className="tva-stat"><span>LINEA SACRA OSSERVATA</span><b>{pct}%</b></div>
       </div>
       <div className="tva-line">
-        <div className="tva-spine"><i style={{ height: seenIdx < 0 ? 0 : `calc(${((seenIdx + 0.5) / Math.max(items.length, 1)) * 100}%)` }} /></div>
+        <div className="tva-spine" />
         {items.map((m, i) => {
           const seen = user.watched?.includes(m.id);
           return (
-            <div key={m.id} className={"tnode " + (i % 2 ? "r" : "l") + (seen ? " seen" : "")}>
+            <div key={m.id} className={"tnode " + (i % 2 ? "r" : "l")}>
               <button className="tcard" onClick={() => go({ n: "media", id: m.id })}>
                 <span className="tposter" style={{ backgroundImage: `url(${art(m, "poster")})` }} />
                 <span className="tinfo">
@@ -251,6 +250,32 @@ const DOOM_OPEN_UNTIL = Date.parse("2026-12-16T23:59:59+01:00"); // la sezione s
 const CALC_UNTIL = Date.parse("2026-12-15T23:59:59+01:00");     // il piano si calcola fino al 15 dicembre
 const fmtH = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60); return `${h}h ${String(m).padStart(2, "0")}m`; };
 const readHpd = () => { try { return Number(localStorage.getItem("doom_hpd")) || 0; } catch { return 0; } };
+
+const DoomMask = () => (
+  <svg className="dm-mask" viewBox="0 0 64 64" fill="none" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+    <defs>
+      <linearGradient id="dmg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#b9f5d0" /><stop offset="1" stopColor="#3fae78" /></linearGradient>
+      <radialGradient id="dmglow" cx="50%" cy="42%" r="55%"><stop offset="0" stopColor="#7be0a4" stopOpacity=".35" /><stop offset="1" stopColor="#7be0a4" stopOpacity="0" /></radialGradient>
+    </defs>
+    <circle cx="32" cy="32" r="31" fill="url(#dmglow)" />
+    {/* cappuccio */}
+    <path d="M8 61l4-31C13.5 13 21 4 32 3c11 1 18.500 10 20 27l4 31" stroke="url(#dmg)" strokeWidth="2.2" />
+    <path d="M14 33C16 19 22 12 32 11c10 1 16 8 18 22" stroke="url(#dmg)" strokeWidth="1.2" opacity=".55" />
+    {/* maschera */}
+    <path d="M19.500 22.500L32 17l12.500 5.500-1.200 17.500c-.4 5-3.400 9.200-11.300 15.500C24.100 49.200 21.100 45 20.700 40z" fill="#0c1511" stroke="url(#dmg)" strokeWidth="2" />
+    {/* arcata del sopracciglio */}
+    <path d="M21.500 27l9 2.200M42.500 27l-9 2.200" stroke="url(#dmg)" strokeWidth="1.800" />
+    {/* occhi */}
+    <path d="M22.500 31.200l7.500 1.600-.7 3.400-6.800-1.500z" fill="#7be0a4" />
+    <path d="M41.500 31.200L34 32.800l.7 3.400 6.800-1.500z" fill="#7be0a4" />
+    {/* naso */}
+    <path d="M32 33l-2.200 9h4.400z" stroke="url(#dmg)" strokeWidth="1.400" />
+    {/* bocca a griglia */}
+    <path d="M27.500 47.500h9M28.500 50.500h7M29.800 53.200h4.400" stroke="url(#dmg)" strokeWidth="1.500" />
+    {/* rivetti */}
+    <circle cx="22.800" cy="38.500" r="1" fill="#7be0a4" /><circle cx="41.200" cy="38.500" r="1" fill="#7be0a4" />
+  </svg>
+);
 
 function DoomView({ media, doom = {}, user, go, watch }) {
   const [now, setNow] = useState(Date.now());
@@ -293,56 +318,73 @@ function DoomView({ media, doom = {}, user, go, watch }) {
   const fits = queue.length === 0;
   const setH = (v) => { const n = Math.min(12, Math.max(0.5, v)); setHpd(n); try { localStorage.setItem("doom_hpd", String(n)); } catch {} };
 
+  const totalAll = picks.reduce((t, x) => t + x.total, 0);
+  const pct = totalAll ? Math.round(((totalAll - remaining) / totalAll) * 100) : 0;
+  const doneCount = picks.filter((x) => x.done).length;
+  const hh = (v) => v.toString().replace(".", ",");
+  const relLabel = new Date(rel).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
+
   return (
-    <div className="page doom">
-      <div className="doom-head">
-        <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M12 2c-4.4 0-7.5 3.2-7.5 7.6V19l3.5 3h8l3.5-3V9.6C19.5 5.2 16.4 2 12 2z" /><path d="M7.5 10.5l3 1.2M16.5 10.5l-3 1.2M12 13.5v3.5M9.5 19h5" /></svg>
-        <small>LATVERIA · DECRETO DI VON DOOM</small>
-        <h1>ROAD TO DOOMSDAY</h1>
+    <div className="page dm">
+      <div className="dm-title">
+        <DoomMask />
+        <div><small>Avengers: Doomsday</small><h1>Road to Doomsday</h1></div>
       </div>
 
-      <div className="doom-cd">
-        <small>AVENGERS: DOOMSDAY · USCITA IN</small>
-        <div className="cdgrid">
-          {[["GIORNI", d], ["ORE", h], ["MIN", mi], ["SEC", sc]].map(([l, v]) => <div key={l}><b>{String(v).padStart(2, "0")}</b><span>{l}</span></div>)}
+      <section className="dm-card dm-count">
+        <small>Uscita il {relLabel}</small>
+        <div className="dm-cd">
+          {[["giorni", d], ["ore", h], ["min", mi], ["sec", sc]].map(([l, v]) => <div key={l}><b>{String(v).padStart(2, "0")}</b><span>{l}</span></div>)}
         </div>
-      </div>
+      </section>
 
-      <div className="doom-two">
-        <div className="doom-box"><small>ORE ANCORA DA VEDERE</small><b>{fmtH(remaining)}</b></div>
-        <div className="doom-box"><small>PROSSIMO DA VEDERE</small><b className="nx">{next ? next.m.title : "Tutto visto 👑"}</b>
-          {next && <button className="doom-go" onClick={() => (next.m.type === "movie" ? watch(next.m.id) : go({ n: "media", id: next.m.id }))}>{next.m.type === "movie" ? "Guarda ora" : "Apri"}</button>}
-        </div>
-      </div>
+      <section className="dm-card">
+        <div className="dm-row"><small>Ancora da vedere</small><b className="dm-big">{fmtH(remaining)}</b></div>
+        <div className="dm-bar"><i style={{ width: pct + "%" }} /></div>
+        <div className="dm-row dm-sub"><span>{doneCount} di {picks.length} progetti completati</span><span>{pct}%</span></div>
+      </section>
+
+      {next && (
+        <section className="dm-card dm-next">
+          <span className="dm-poster" style={{ backgroundImage: `url(${art(next.m, "poster")})` }} />
+          <div className="dm-nextinfo">
+            <small>Prossimo da vedere</small>
+            <b>{next.m.title}</b>
+            <span>{next.total ? fmtH(next.rem || next.total) : "durata mancante"}</span>
+            <button className="dm-btn" onClick={() => (next.m.type === "movie" ? watch(next.m.id) : go({ n: "media", id: next.m.id }))}>{next.m.type === "movie" ? "Guarda ora" : "Apri"}</button>
+          </div>
+        </section>
+      )}
 
       {!picks.length ? <p className="hint">Nessun progetto scelto per la Road to Doomsday.</p> : (
         <>
-          <h2 className="doom-h">I TUOI SUDDITI DA VEDERE</h2>
-          <div className="doom-list">
+          <h2 className="dm-h">Da vedere</h2>
+          <div className="dm-list">
             {picks.map(({ m, total, rem, done }, i) => (
-              <button key={m.id} className={"dpick" + (done ? " done" : "")} onClick={() => go({ n: "media", id: m.id })}>
-                <span className="dn">{i + 1}</span>
-                <span className="dth" style={{ backgroundImage: `url(${art(m, "poster")})` }} />
-                <span className="di"><b>{m.title}</b><small>{total ? `${fmtH(total)}${rem !== total && rem > 0 ? ` · restano ${fmtH(rem)}` : ""}` : "durata mancante"}</small></span>
-                {done && <span className="dok"><I.Check size={16} /></span>}
+              <button key={m.id} className={"dm-item" + (done ? " done" : "")} onClick={() => go({ n: "media", id: m.id })}>
+                <span className="dm-n">{i + 1}</span>
+                <span className="dm-th" style={{ backgroundImage: `url(${art(m, "poster")})` }} />
+                <span className="dm-in"><b>{m.title}</b><small>{total ? `${fmtH(total)}${rem !== total && rem > 0 ? ` · restano ${fmtH(rem)}` : ""}` : "durata mancante"}</small></span>
+                <span className={"dm-tag" + (done ? " ok" : "")}>{done ? "Visto" : "Da vedere"}</span>
               </button>
             ))}
           </div>
 
-          <h2 className="doom-h">IL TUO CALENDARIO (fino al 15 dicembre)</h2>
-          <div className="doom-plan-ctl">
-            <span>Ore al giorno</span>
-            <div><button onClick={() => setH((hpd || rec) - 0.5)}>−</button><b>{(hpd || rec).toString().replace(".", ",")}h</b><button onClick={() => setH((hpd || rec) + 0.5)}>+</button></div>
-            <button className="doom-rec" onClick={() => setH(rec)}>Consigliato: {rec.toString().replace(".", ",")}h</button>
-          </div>
-          {remaining === 0 ? <p className="hint">Hai già visto tutto. Sei pronto per Doomsday. 👑</p>
-            : !fits ? <p className="doom-warn">Con {(hpd || rec).toString().replace(".", ",")}h al giorno non finisci entro il 15 dicembre: servono almeno {need.toFixed(1).replace(".", ",")}h al giorno.</p>
-            : <p className="hint">Finisci il {plan[plan.length - 1].date.toLocaleDateString("it-IT", { day: "numeric", month: "long" })}, in tempo per Doomsday.</p>}
-          <div className="doom-plan">
+          <h2 className="dm-h">Calendario fino al 15 dicembre</h2>
+          <section className="dm-card dm-ctl">
+            <div className="dm-row"><span>Ore al giorno</span>
+              <div className="dm-step"><button onClick={() => setH((hpd || rec) - 0.5)}>−</button><b>{hh(hpd || rec)} h</b><button onClick={() => setH((hpd || rec) + 0.5)}>+</button></div>
+            </div>
+            <button className="dm-link" onClick={() => setH(rec)}>Usa il consigliato: {hh(rec)} h al giorno</button>
+          </section>
+          {remaining === 0 ? <p className="dm-note">Hai già visto tutto: sei in pari per l'uscita.</p>
+            : !fits ? <p className="dm-note warn">Con {hh(hpd || rec)} h al giorno non finisci entro il 15 dicembre: servono almeno {need.toFixed(1).replace(".", ",")} h al giorno.</p>
+            : <p className="dm-note">Finisci il {plan[plan.length - 1].date.toLocaleDateString("it-IT", { day: "numeric", month: "long" })}, prima dell'uscita.</p>}
+          <div className="dm-plan">
             {plan.map((p, i) => (
-              <div key={i} className="dday">
-                <div className="dd"><b>{p.date.toLocaleDateString("it-IT", { day: "numeric" })}</b><small>{p.date.toLocaleDateString("it-IT", { weekday: "short", month: "short" })}</small></div>
-                <div className="dl">{p.items.map((it, j) => <div key={j}><span>{it.title}{it.part ? " (parte)" : ""}</span><em>{fmtH(it.min)}</em></div>)}</div>
+              <div key={i} className="dm-day">
+                <div className="dm-date"><b>{p.date.toLocaleDateString("it-IT", { day: "numeric" })}</b><small>{p.date.toLocaleDateString("it-IT", { weekday: "short", month: "short" })}</small></div>
+                <div className="dm-todo">{p.items.map((it, j) => <div key={j}><span>{it.title}{it.part ? " (parte)" : ""}</span><em>{fmtH(it.min)}</em></div>)}</div>
               </div>
             ))}
           </div>

@@ -202,20 +202,16 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .tva-stat{display:flex;justify-content:center;gap:10px;align-items:baseline;font-size:11px;letter-spacing:.1em}
 .tva-stat b{font-size:20px;text-shadow:0 0 10px rgba(255,157,46,.8)}
 .tva-line{position:relative;z-index:3;padding:6px 0}
-.tva-spine{position:absolute;left:50%;top:0;bottom:0;width:4px;margin-left:-2px;background:var(--dim);border-radius:2px;box-shadow:0 0 8px rgba(255,157,46,.15)}
-.tva-spine i{position:absolute;left:0;right:0;top:0;background:linear-gradient(180deg,var(--am2),var(--am));box-shadow:0 0 14px var(--am),0 0 30px rgba(255,157,46,.5);border-radius:2px;animation:tvapulse 2.4s ease-in-out infinite}
-@keyframes tvapulse{50%{filter:brightness(1.35)}}
+.tva-spine{position:absolute;left:50%;top:0;bottom:0;width:4px;margin-left:-2px;background:linear-gradient(180deg,var(--am2),var(--am));border-radius:2px;box-shadow:0 0 14px rgba(255,157,46,.55)}
+}
 .tnode{position:relative;display:flex;margin:14px 0;min-height:72px}
 .tnode.l{justify-content:flex-start;padding-right:calc(50% + 18px)}
 .tnode.r{justify-content:flex-end;padding-left:calc(50% + 18px)}
 .tdot{position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;background:#120a03;border:2px solid var(--dim);transform:rotate(45deg)}
-.tnode.seen .tdot{background:var(--am);border-color:var(--am2);box-shadow:0 0 12px var(--am)}
 .tnode::before{content:"";position:absolute;top:50%;height:2px;width:18px;background:var(--dim)}
 .tnode.l::before{right:50%}
 .tnode.r::before{left:50%}
-.tnode.seen::before{background:var(--am)}
 .tcard{display:flex;gap:8px;align-items:stretch;width:100%;background:rgba(255,157,46,.06);border:1px solid var(--dim);border-radius:4px;padding:6px;color:var(--am);text-align:left;cursor:pointer;font-family:inherit}
-.tnode.seen .tcard{border-color:var(--am);background:rgba(255,157,46,.13);box-shadow:0 0 12px rgba(255,157,46,.2)}
 .tnode.r .tcard{flex-direction:row}
 .tposter{flex:0 0 38px;min-height:58px;background:#2a1706 center/cover;border:1px solid var(--dim);filter:sepia(.7) saturate(1.3) contrast(1.05)}
 .tinfo{display:flex;flex-direction:column;gap:2px;min-width:0;justify-content:center}
@@ -223,41 +219,51 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .tinfo b{font-size:12px;line-height:1.2;color:var(--am);text-transform:uppercase;overflow-wrap:anywhere}
 .tinfo em{font-style:normal;font-size:9px;letter-spacing:.08em;opacity:.7}
 
-/* ===== ROAD TO DOOMSDAY · Doctor Doom ===== */
-.doom{--gr:#3dff8a;--gd:#0c3a22;--gold:#c9a24a;position:relative;background:radial-gradient(ellipse at 50% -10%,#0f3a26 0,#07150e 55%,#030806 100%);border:2px solid #2b3a31;border-radius:18px;padding:18px 14px 120px;color:#d9e6dd;font-family:"Cinzel","Trajan Pro",Georgia,"Times New Roman",serif;box-shadow:inset 0 0 60px rgba(61,255,138,.06)}
-.doom-head{text-align:center;color:var(--gr)}
-.doom-head svg{filter:drop-shadow(0 0 8px rgba(61,255,138,.7));margin-bottom:4px}
-.doom-head small{display:block;letter-spacing:.22em;font-size:10px;color:var(--gold)}
-.doom-head h1{margin:6px 0 0;font-weight:700;font-size:28px;letter-spacing:.14em;color:#e8f3ec;text-shadow:0 0 16px rgba(61,255,138,.55)}
-.doom-cd{margin:16px 0 10px;border:1px solid var(--gold);border-radius:6px;padding:12px;text-align:center;background:linear-gradient(180deg,rgba(201,162,74,.08),transparent)}
-.doom-cd small{font-size:10px;letter-spacing:.2em;color:var(--gold)}
-.cdgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
-.cdgrid b{display:block;font-size:30px;color:var(--gr);text-shadow:0 0 14px rgba(61,255,138,.7);font-variant-numeric:tabular-nums}
-.cdgrid span{font-size:9px;letter-spacing:.18em;color:#9fb5a7}
-.doom-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.doom-box{border:1px solid #2b3a31;border-radius:6px;padding:10px;background:rgba(0,0,0,.35);display:flex;flex-direction:column;gap:4px}
-.doom-box small{font-size:9px;letter-spacing:.16em;color:var(--gold)}
-.doom-box b{font-size:20px;color:var(--gr)}
-.doom-box b.nx{font-size:14px;line-height:1.2;color:#e8f3ec}
-.doom-go{margin-top:4px;background:var(--gr);color:#03140a;border:0;border-radius:4px;padding:7px;font:700 12px Georgia,serif;letter-spacing:.06em;cursor:pointer}
-.doom-h{margin:18px 0 8px;font-size:12px;letter-spacing:.2em;color:var(--gold);font-weight:700;border-bottom:1px solid #2b3a31;padding-bottom:6px}
-.doom-list{display:flex;flex-direction:column;gap:6px}
-.dpick{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.4);border:1px solid #243329;border-radius:6px;padding:6px;color:#d9e6dd;text-align:left;cursor:pointer;font-family:inherit}
-.dpick.done{opacity:.5}
-.dn{width:22px;text-align:center;color:var(--gold);font-weight:700}
-.dth{flex:0 0 38px;height:56px;background:#0c1a12 center/cover;border-radius:3px;border:1px solid #2b3a31}
-.di{flex:1;display:flex;flex-direction:column;min-width:0}
-.di b{font-size:13px}.di small{font-size:11px;color:#9fb5a7}
-.dok{color:var(--gr)}
-.doom-plan-ctl{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px}
-.doom-plan-ctl div{display:flex;align-items:center;gap:10px}
-.doom-plan-ctl div button{width:32px;height:32px;border-radius:50%;border:1px solid var(--gold);background:transparent;color:var(--gold);font-size:18px;cursor:pointer}
-.doom-plan-ctl b{min-width:48px;text-align:center;font-size:18px;color:var(--gr)}
-.doom-rec{background:transparent;border:1px solid var(--gr);color:var(--gr);border-radius:4px;padding:6px 8px;font:12px Georgia,serif;cursor:pointer}
-.doom-warn{margin:10px 0;padding:10px;border:1px solid #ff5a5a;border-radius:6px;background:rgba(255,90,90,.08);color:#ff9a9a;font-size:13px}
-.doom .hint{color:#9fb5a7}
-.doom-plan{display:flex;flex-direction:column;gap:6px;margin-top:8px}
-.dday{display:flex;gap:10px;background:rgba(0,0,0,.35);border:1px solid #243329;border-left:3px solid var(--gr);border-radius:6px;padding:8px}
-.dd{flex:0 0 46px;text-align:center;line-height:1.1}.dd b{display:block;font-size:20px;color:var(--gr)}.dd small{font-size:10px;color:#9fb5a7;text-transform:uppercase}
-.dl{flex:1;display:flex;flex-direction:column;gap:2px;font-size:13px}
-.dl div{display:flex;justify-content:space-between;gap:8px}.dl em{font-style:normal;color:var(--gold);white-space:nowrap}
+/* ===== ROAD TO DOOMSDAY ===== */
+.dm{--ac:#7be0a4;--bd:#232826;--mu:#8d9892;padding-bottom:120px;font-family:inherit}
+.dm-title{display:flex;align-items:center;gap:14px;margin:4px 0 16px}
+.dm-mask{flex:0 0 78px;width:78px;height:78px;filter:drop-shadow(0 0 12px rgba(123,224,164,.3))}
+.dm-title small{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ac);font-weight:600}
+.dm-title h1{margin:4px 0 0;font-size:30px;line-height:1.1;font-weight:800;letter-spacing:-.01em}
+.dm-card{background:#101312;border:1px solid var(--bd);border-radius:16px;padding:16px;margin-bottom:12px}
+.dm-card small{color:var(--mu);font-size:12px}
+.dm-count{text-align:center}
+.dm-cd{display:grid;grid-template-columns:repeat(4,1fr);margin-top:12px}
+.dm-cd div{display:flex;flex-direction:column;gap:2px}
+.dm-cd div+div{border-left:1px solid var(--bd)}
+.dm-cd b{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.dm-cd span{font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em}
+.dm-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.dm-big{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.dm-bar{height:6px;background:#1b201e;border-radius:99px;overflow:hidden;margin:12px 0 8px}
+.dm-bar i{display:block;height:100%;background:var(--ac);border-radius:99px;transition:width .4s}
+.dm-sub{font-size:12px;color:var(--mu)}
+.dm-next{display:flex;gap:14px;align-items:center}
+.dm-poster{flex:0 0 64px;height:94px;border-radius:8px;background:#1b201e center/cover}
+.dm-nextinfo{display:flex;flex-direction:column;gap:3px;min-width:0}
+.dm-nextinfo b{font-size:17px;line-height:1.2}
+.dm-nextinfo span{font-size:13px;color:var(--mu)}
+.dm-btn{align-self:flex-start;margin-top:6px;background:var(--ac);color:#06130c;border:0;border-radius:10px;padding:9px 16px;font-weight:700;font-size:14px;cursor:pointer}
+.dm-h{font-size:13px;color:var(--mu);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:22px 0 10px}
+.dm-list{display:flex;flex-direction:column;gap:8px}
+.dm-item{display:flex;align-items:center;gap:12px;background:#101312;border:1px solid var(--bd);border-radius:14px;padding:8px 12px 8px 8px;color:inherit;text-align:left;cursor:pointer;font-family:inherit}
+.dm-item.done{opacity:.55}
+.dm-n{width:20px;text-align:center;color:var(--mu);font-size:13px;font-variant-numeric:tabular-nums}
+.dm-th{flex:0 0 40px;height:58px;border-radius:6px;background:#1b201e center/cover}
+.dm-in{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.dm-in b{font-size:14px}.dm-in small{font-size:12px;color:var(--mu)}
+.dm-tag{font-size:11px;color:var(--mu);border:1px solid var(--bd);border-radius:99px;padding:3px 9px;white-space:nowrap}
+.dm-tag.ok{color:var(--ac);border-color:var(--ac)}
+.dm-ctl .dm-row{align-items:center;font-size:15px}
+.dm-step{display:flex;align-items:center;gap:12px}
+.dm-step button{width:34px;height:34px;border-radius:50%;border:1px solid var(--bd);background:#171b19;color:inherit;font-size:18px;cursor:pointer}
+.dm-step b{min-width:54px;text-align:center;font-size:17px;font-variant-numeric:tabular-nums}
+.dm-link{margin-top:10px;background:none;border:0;padding:0;color:var(--ac);font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.dm-note{font-size:13px;color:var(--mu);margin:2px 0 10px}
+.dm-note.warn{color:#f0a08c}
+.dm-plan{display:flex;flex-direction:column;gap:8px}
+.dm-day{display:flex;gap:12px;background:#101312;border:1px solid var(--bd);border-radius:14px;padding:10px 12px}
+.dm-date{flex:0 0 44px;text-align:center;line-height:1.15}
+.dm-date b{display:block;font-size:20px}.dm-date small{font-size:11px;color:var(--mu);text-transform:uppercase}
+.dm-todo{flex:1;display:flex;flex-direction:column;gap:3px;font-size:14px;justify-content:center}
+.dm-todo div{display:flex;justify-content:space-between;gap:8px}.dm-todo em{font-style:normal;color:var(--mu);white-space:nowrap}
