@@ -273,6 +273,7 @@ async function tmdbSeasonEps(id, n) {
       overview: e.overview || f.overview || "", // fallback in inglese se manca in italiano
       coverUrl: e.still_path || f.still_path ? `https://image.tmdb.org/t/p/w780${e.still_path || f.still_path}` : "",
       airDate: e.air_date || "",
+      runtime: e.runtime || f.runtime || 0,
     };
   });
 }
@@ -373,9 +374,19 @@ function applySource(db, mediaId, episodeId, src) {
   return true;
 }
 
+// Il bot legge i post SOLO dai canali del tuo catalogo: quelli in AUTOLINK_CHANNELS (se impostata),
+// altrimenti i canali già usati dai video collegati. Qualsiasi altro canale dove il bot è admin viene ignorato.
+async function channelAllowed(chat) {
+  const keys = [String(chat.id), chat.username ? "@" + chat.username : ""].filter(Boolean).map((x) => x.toLowerCase());
+  const env = (process.env.AUTOLINK_CHANNELS || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const list = env.length ? env : allSources(await getDb()).map((x) => String(x.src.channelId).toLowerCase());
+  return keys.some((k) => list.includes(k));
+}
+
 async function channelPost(post) {
   const hasFile = post.video || post.document || post.animation || post.video_note;
   if (!hasFile) return;
+  if (!(await channelAllowed(post.chat))) return;
   const text = post.caption || post.video?.file_name || post.document?.file_name || "";
   if (!text.trim()) return;
   const channelId = post.chat.username ? "@" + post.chat.username : post.chat.id;
@@ -528,6 +539,11 @@ export default async (req) => {
     return json({
       media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
       categories: db.categories.filter((x) => x.visible !== false),
+      // novità con interruttore: "off" nascosta, "admin" solo admin (default), "all" tutti
+      features: Object.fromEntries(["timeline", "doom"].map((k) => { const v = db.features?.[k] ?? "admin"; return [k, v === "all" || (v === "admin" && isAdmin)]; })),
+      timeline: db.timeline || [],
+      timelineOut: db.timelineOut || [],
+      doomsday: db.doomsday || { ids: [], minutes: {}, date: "2026-12-16" },
       user: await getUser(user.id),
     });
   }
@@ -803,6 +819,57 @@ export default async (req) => {
           backdropUrl: img(x.backdrop_path, "w780"),
         })),
       });
+    }
+
+    if (b === "features" && req.method === "POST") {
+      const { key, value } = await req.json();
+      if (!["timeline", "doom"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
+      const db = await getDb();
+      db.features = { ...(db.features || {}), [key]: value };
+      await saveDb(db);
+      return json({ ok: true });
+    }
+
+    // Ordine cronologico della storia (lista di id in ordine)
+    if (b === "timeline" && req.method === "POST") {
+      const { ids, out = [] } = await req.json();
+      if (!Array.isArray(ids) || ids.some((x) => typeof x !== "string") || !Array.isArray(out)) return json({ error: "bad request" }, 400);
+      const db = await getDb();
+      const has = (id) => db.media.some((m) => m.id === id);
+      db.timeline = ids.filter(has);
+      db.timelineOut = out.filter((x) => typeof x === "string" && has(x)); // titoli esclusi dalla Timeline Marvel
+      await saveDb(db);
+      return json({ ok: true });
+    }
+
+    // Road to Doomsday: progetti scelti (in ordine), durate in minuti e data di uscita
+    if (b === "doomsday" && req.method === "POST") {
+      const { ids, minutes = {}, date } = await req.json();
+      if (!Array.isArray(ids) || ids.some((x) => typeof x !== "string")) return json({ error: "bad request" }, 400);
+      const db = await getDb();
+      const has = (id) => db.media.some((m) => m.id === id);
+      const mins = {};
+      for (const id of ids.filter(has)) mins[id] = Math.max(0, Math.min(100000, Math.round(Number(minutes[id]) || 0)));
+      db.doomsday = { ids: ids.filter(has), minutes: mins, date: /^\d{4}-\d{2}-\d{2}$/.test(date || "") ? date : "2026-12-16" };
+      await saveDb(db);
+      return json({ ok: true });
+    }
+
+    // Durata totale da TMDB (film: runtime; serie: somma dei minuti di tutti gli episodi)
+    if (b === "tmdb-runtime") {
+      const key = process.env.TMDB_API_KEY, id = url.searchParams.get("id"), type = url.searchParams.get("type");
+      if (!key || !id) return json({ error: "TMDB non configurato o titolo senza collegamento TMDB" }, 400);
+      if (type !== "series") {
+        const d = await fetch(`https://api.themoviedb.org/3/movie/${encodeURIComponent(id)}?api_key=${key}&language=it-IT`).then((x) => x.json()).catch(() => ({}));
+        return d.runtime ? json({ minutes: d.runtime }) : json({ error: "Durata non trovata" }, 404);
+      }
+      const d = await fetch(`https://api.themoviedb.org/3/tv/${encodeURIComponent(id)}?api_key=${key}&language=it-IT`).then((x) => x.json()).catch(() => ({}));
+      const nums = (d.seasons || []).filter((x) => x.season_number > 0).map((x) => x.season_number);
+      if (!nums.length) return json({ error: "Serie non trovata su TMDB" }, 404);
+      const all = await Promise.all(nums.map((n) => tmdbSeasonEps(id, n)));
+      const avg = (d.episode_run_time || [])[0] || 45; // se un episodio non ha durata si usa la media
+      const minutes = all.flat().filter(Boolean).reduce((t, e) => t + (e.runtime || avg), 0);
+      return minutes ? json({ minutes }) : json({ error: "Durata non trovata" }, 404);
     }
 
     if (b === "backup" && req.method === "POST") {
