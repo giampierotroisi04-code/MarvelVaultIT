@@ -222,7 +222,7 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 /* ===== ROAD TO DOOMSDAY ===== */
 .dm{--ac:#7be0a4;--bd:#232826;--mu:#8d9892;padding-bottom:120px;font-family:inherit}
 .dm-title{display:flex;align-items:center;gap:14px;margin:4px 0 16px}
-.dm-mask{flex:0 0 78px;width:78px;height:78px;filter:drop-shadow(0 0 12px rgba(123,224,164,.3))}
+.dm-mask{flex:0 0 80px;width:80px;height:75px;filter:drop-shadow(0 0 12px rgba(123,224,164,.3))}
 .dm-title small{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ac);font-weight:600}
 .dm-title h1{margin:4px 0 0;font-size:30px;line-height:1.1;font-weight:800;letter-spacing:-.01em}
 .dm-card{background:#101312;border:1px solid var(--bd);border-radius:16px;padding:16px;margin-bottom:12px}

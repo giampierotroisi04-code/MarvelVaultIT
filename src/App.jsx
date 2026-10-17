@@ -252,28 +252,38 @@ const fmtH = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60)
 const readHpd = () => { try { return Number(localStorage.getItem("doom_hpd")) || 0; } catch { return 0; } };
 
 const DoomMask = () => (
-  <svg className="dm-mask" viewBox="0 0 64 64" fill="none" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+  <svg className="dm-mask" viewBox="0 0 64 60" fill="none" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
     <defs>
-      <linearGradient id="dmg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#b9f5d0" /><stop offset="1" stopColor="#3fae78" /></linearGradient>
-      <radialGradient id="dmglow" cx="50%" cy="42%" r="55%"><stop offset="0" stopColor="#7be0a4" stopOpacity=".35" /><stop offset="1" stopColor="#7be0a4" stopOpacity="0" /></radialGradient>
+      <linearGradient id="dmg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f1f6f3" /><stop offset="1" stopColor="#8fa59a" /></linearGradient>
+      <radialGradient id="dmglow" cx="50%" cy="45%" r="55%"><stop offset="0" stopColor="#7be0a4" stopOpacity=".25" /><stop offset="1" stopColor="#7be0a4" stopOpacity="0" /></radialGradient>
     </defs>
-    <circle cx="32" cy="32" r="31" fill="url(#dmglow)" />
-    {/* cappuccio */}
-    <path d="M8 61l4-31C13.5 13 21 4 32 3c11 1 18.500 10 20 27l4 31" stroke="url(#dmg)" strokeWidth="2.2" />
-    <path d="M14 33C16 19 22 12 32 11c10 1 16 8 18 22" stroke="url(#dmg)" strokeWidth="1.2" opacity=".55" />
-    {/* maschera */}
-    <path d="M19.500 22.500L32 17l12.500 5.500-1.200 17.500c-.4 5-3.400 9.200-11.300 15.500C24.100 49.200 21.100 45 20.700 40z" fill="#0c1511" stroke="url(#dmg)" strokeWidth="2" />
-    {/* arcata del sopracciglio */}
-    <path d="M21.500 27l9 2.200M42.500 27l-9 2.200" stroke="url(#dmg)" strokeWidth="1.800" />
+    <ellipse cx="32" cy="30" rx="30" ry="30" fill="url(#dmglow)" />
+    {/* placca del viso */}
+    <path d="M32 4 C25.5 4 21 5.5 18.8 8.2 L15.2 22 L16.6 34 L23.4 45.2 L27.2 55 L36.8 55 L40.6 45.2 L47.4 34 L48.8 22 L45.2 8.2 C43 5.5 38.5 4 32 4 Z" fill="#0c1511" stroke="url(#dmg)" strokeWidth="1.5" />
+    {/* calotta della fronte: bordo a V con i rivetti */}
+    <path d="M18.8 8.2 C21 5.5 25.5 4 32 4 C38.5 4 43 5.5 45.2 8.2 Q38 11.5 32 14.5 Q26 11.5 18.8 8.2 Z" fill="#18231e" stroke="url(#dmg)" strokeWidth="1" />
+    <path d="M18.8 8.2 Q26 11.5 32 14.5 Q38 11.5 45.2 8.2" stroke="#dfe8e2" strokeWidth="1" strokeDasharray="0 1.6" />
+    {/* arcate sopraccigliari */}
+    <path d="M15.4 22.5 Q22 22.6 31.6 25.4" stroke="url(#dmg)" strokeWidth="1" />
+    <path d="M48.6 22.5 Q42 22.6 32.4 25.4" stroke="url(#dmg)" strokeWidth="1" />
     {/* occhi */}
-    <path d="M22.500 31.200l7.500 1.600-.7 3.400-6.800-1.500z" fill="#7be0a4" />
-    <path d="M41.500 31.200L34 32.800l.7 3.400 6.800-1.500z" fill="#7be0a4" />
-    {/* naso */}
-    <path d="M32 33l-2.200 9h4.400z" stroke="url(#dmg)" strokeWidth="1.400" />
-    {/* bocca a griglia */}
-    <path d="M27.500 47.500h9M28.500 50.500h7M29.800 53.200h4.400" stroke="url(#dmg)" strokeWidth="1.500" />
-    {/* rivetti */}
-    <circle cx="22.800" cy="38.500" r="1" fill="#7be0a4" /><circle cx="41.200" cy="38.500" r="1" fill="#7be0a4" />
+    <path d="M18.4 24.4 L30.8 26.6 L30.5 30.4 L19.4 29.8 Z" fill="#7be0a4" stroke="url(#dmg)" strokeWidth="1" />
+    <path d="M45.6 24.4 L33.2 26.6 L33.5 30.4 L44.6 29.8 Z" fill="#7be0a4" stroke="url(#dmg)" strokeWidth="1" />
+    <path d="M20 32 Q25 32.6 30.2 32.2" stroke="#dfe8e2" strokeWidth="1" strokeDasharray="0 1.6" />
+    <path d="M44 32 Q39 32.6 33.8 32.2" stroke="#dfe8e2" strokeWidth="1" strokeDasharray="0 1.6" />
+    {/* naso sfaccettato */}
+    <path d="M32 24.8 L28.4 36.6 L32 39.6 L35.6 36.6 Z" fill="#0c1511" stroke="url(#dmg)" strokeWidth="1.1" />
+    <path d="M28.4 36.6 L32 31.2 L35.6 36.6 M32 31.2 V39.6" stroke="url(#dmg)" strokeWidth=".7" opacity=".7" />
+    {/* piani delle guance */}
+    <path d="M17 33.5 L24 41.6 L27.4 46.5" stroke="url(#dmg)" strokeWidth=".9" opacity=".8" />
+    <path d="M47 33.5 L40 41.6 L36.6 46.5" stroke="url(#dmg)" strokeWidth=".9" opacity=".8" />
+    {/* bocca a "broncio" con griglia centrale */}
+    <path d="M24.4 42.6 Q32 40 39.6 42.6 L38.8 46 Q32 43.6 25.2 46 Z" fill="#050a08" stroke="url(#dmg)" strokeWidth="1.1" />
+    <path d="M29.2 41.4v2.6M31 41.2v2.7M33 41.2v2.7M34.8 41.4v2.6" stroke="url(#dmg)" strokeWidth=".8" />
+    <path d="M25.2 46 Q32 43.6 38.8 46" stroke="#dfe8e2" strokeWidth="1" strokeDasharray="0 1.6" />
+    {/* mento */}
+    <path d="M27.3 47.4 L36.7 47.4 L35.8 55 L28.2 55 Z" fill="#0e1814" stroke="url(#dmg)" strokeWidth="1.1" />
+    <path d="M32 47.4V55" stroke="url(#dmg)" strokeWidth=".7" opacity=".7" />
   </svg>
 );
 
