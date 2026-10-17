@@ -548,8 +548,11 @@ function AutoLink({ media, onDone }) {
 // ---------- Pannello ----------
 export default function Admin({ say, onChange }) {
   const [tab, setTab] = useState("media");
+  const [q, setQ] = useState("");
+  const nz = (t = "") => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
   const [db, setDb] = useState(null);
   const [form, setForm] = useState(null);
+  const shown = (db?.media || []).filter((m) => !q.trim() || nz(m.title + " " + (m.year || "")).includes(nz(q))).sort((a, b) => b.createdAt - a.createdAt);
   const reload = () => api("admin/catalog").then((d) => { setDb(d); onChange?.(); });
   useEffect(() => { api("admin/catalog").then(setDb).catch(() => say("Accesso negato")); }, []);
   if (!db) return <div className="page">Carico…</div>;
@@ -573,7 +576,9 @@ export default function Admin({ say, onChange }) {
       {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Stats /><Backup say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
-          {[...db.media].sort((a, b) => b.createdAt - a.createdAt).map((m) => (
+          <input className="in" placeholder={`Cerca tra ${db.media.length} progetti…`} value={q} onChange={(e) => setQ(e.target.value)} />
+          {q.trim() && !shown.length && <p className="hint">Nessun progetto trovato.</p>}
+          {shown.map((m) => (
             <div className="item" key={m.id}>
               <b>{m.title}</b> <small>{m.type === "movie" ? "Film" : `Serie · ${m.seasons?.reduce((n, s) => n + s.episodes.length, 0)} ep.`}{m.visible === false ? " · nascosto" : ""}</small>
               <div className="actions"><button className="btn small" onClick={() => setForm(m)}><I.Pencil size={16} /> Modifica</button><button className="btn small" onClick={() => del(m)}><I.Trash size={16} /></button></div>
