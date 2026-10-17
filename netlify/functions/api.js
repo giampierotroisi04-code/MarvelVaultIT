@@ -876,9 +876,14 @@ export default async (req) => {
       const { ids, out = [] } = await req.json();
       if (!Array.isArray(ids) || ids.some((x) => typeof x !== "string") || !Array.isArray(out)) return json({ error: "bad request" }, 400);
       const db = await getDb();
-      const has = (id) => db.media.some((m) => m.id === id);
-      db.timeline = ids.filter(has);
-      db.timelineOut = out.filter((x) => typeof x === "string" && has(x)); // titoli esclusi dalla Timeline Marvel
+      // una voce è un titolo intero ("mediaId") oppure una singola stagione di una serie ("mediaId~seasonId")
+      const has = (key) => {
+        const [mid, sid] = String(key).split("~");
+        const m = db.media.find((x) => x.id === mid);
+        return !!m && (!sid || (m.type === "series" && (m.seasons || []).some((s) => s.id === sid)));
+      };
+      db.timeline = [...new Set(ids.filter(has))];
+      db.timelineOut = out.filter((x) => typeof x === "string" && has(x)); // voci escluse dalla Timeline Marvel
       await saveDb(db);
       return json({ ok: true });
     }
@@ -896,21 +901,37 @@ export default async (req) => {
       return json({ ok: true });
     }
 
-    // Durata totale da TMDB (film: runtime; serie: somma dei minuti di tutti gli episodi)
+    // Durata totale da TMDB (film: runtime; serie: somma dei minuti di tutti gli episodi).
+    // Se c'è un id TMDB lo usa; altrimenti cerca direttamente per titolo (e anno): il titolo non deve essere già collegato a TMDB nel catalogo.
     if (b === "tmdb-runtime") {
-      const key = process.env.TMDB_API_KEY, id = url.searchParams.get("id"), type = url.searchParams.get("type");
-      if (!key || !id) return json({ error: "TMDB non configurato o titolo senza collegamento TMDB" }, 400);
-      if (type !== "series") {
-        const d = await fetch(`https://api.themoviedb.org/3/movie/${encodeURIComponent(id)}?api_key=${key}&language=it-IT`).then((x) => x.json()).catch(() => ({}));
-        return d.runtime ? json({ minutes: d.runtime }) : json({ error: "Durata non trovata" }, 404);
+      const key = process.env.TMDB_API_KEY, type = url.searchParams.get("type");
+      if (!key) return json({ error: "TMDB non configurato (serve TMDB_API_KEY)" }, 400);
+      const tm = (path, lang, q) => fetch(`https://api.themoviedb.org/3/${path}?api_key=${key}&language=${lang}${q ? "&query=" + encodeURIComponent(q) : ""}`).then((x) => x.json()).catch(() => ({}));
+      const kind = type === "series" ? "tv" : "movie";
+      let id = url.searchParams.get("id");
+      if (!id) {
+        const q = String(url.searchParams.get("q") || "").trim().slice(0, 150), y = Number(url.searchParams.get("year")) || 0;
+        if (!q) return json({ error: "Titolo mancante" }, 400);
+        const yr = (x) => Number((x.release_date || x.first_air_date || "").slice(0, 4)) || 0;
+        const find = async (lang) => {
+          const r = (await tm(`search/${kind}`, lang, q)).results || [];
+          return y ? [...r].sort((p, c) => Math.abs(yr(p) - y) - Math.abs(yr(c) - y)) : r;
+        };
+        const hit = (await find("it-IT"))[0] || (await find("en-US"))[0];
+        if (!hit) return json({ error: "Titolo non trovato su TMDB: scrivi la durata a mano" }, 404);
+        id = String(hit.id);
       }
-      const d = await fetch(`https://api.themoviedb.org/3/tv/${encodeURIComponent(id)}?api_key=${key}&language=it-IT`).then((x) => x.json()).catch(() => ({}));
+      if (kind === "movie") {
+        const d = await tm(`movie/${encodeURIComponent(id)}`, "it-IT");
+        return d.runtime ? json({ minutes: d.runtime, tmdbId: id }) : json({ error: "Durata non trovata" }, 404);
+      }
+      const d = await tm(`tv/${encodeURIComponent(id)}`, "it-IT");
       const nums = (d.seasons || []).filter((x) => x.season_number > 0).map((x) => x.season_number);
       if (!nums.length) return json({ error: "Serie non trovata su TMDB" }, 404);
       const all = await Promise.all(nums.map((n) => tmdbSeasonEps(id, n)));
       const avg = (d.episode_run_time || [])[0] || 45; // se un episodio non ha durata si usa la media
       const minutes = all.flat().filter(Boolean).reduce((t, e) => t + (e.runtime || avg), 0);
-      return minutes ? json({ minutes }) : json({ error: "Durata non trovata" }, 404);
+      return minutes ? json({ minutes, tmdbId: id }) : json({ error: "Durata non trovata" }, 404);
     }
 
     if (b === "backup" && req.method === "POST") {
