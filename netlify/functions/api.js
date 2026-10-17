@@ -821,6 +821,47 @@ export default async (req) => {
       });
     }
 
+    // Importa lista timeline: abbina titoli INGLESI a quelli già nel catalogo (titolo uguale oppure tramite TMDB)
+    if (b === "timeline-match" && req.method === "POST") {
+      const { items } = await req.json();
+      if (!Array.isArray(items) || items.length > 12) return json({ error: "bad request" }, 400);
+      const db = await getDb(), key = process.env.TMDB_API_KEY;
+      const yearOf = (m) => Number(String(m.releaseDate || m.year || "").slice(0, 4)) || 0;
+      const best = (c, y) => (!c.length ? null : y ? [...c].sort((p, q) => Math.abs(yearOf(p) - y) - Math.abs(yearOf(q) - y))[0] : c[0]);
+      const tm = (path, lang, q) => fetch(`https://api.themoviedb.org/3/${path}?api_key=${key}&language=${lang}${q ? "&query=" + encodeURIComponent(q) : ""}`).then((x) => x.json()).catch(() => ({}));
+      const yr = (x) => Number((x.release_date || x.first_air_date || "").slice(0, 4)) || 0;
+      const results = await Promise.all(items.map(async (it) => {
+        const q = String(it.q || "").trim().slice(0, 150), y = Number(it.year) || 0;
+        const out = { q, year: y || null, id: null, how: null, tmdb: null };
+        if (!q) return out;
+        let m = best(db.media.filter((x) => norm(x.title) === norm(q)), y);
+        if (m) return { ...out, id: m.id, how: "titolo" };
+        if (!key) return out;
+        const s = await tm("search/multi", "en-US", q);
+        const cands = (s.results || []).filter((x) => x.media_type === "movie" || x.media_type === "tv");
+        const sorted = y ? [...cands].sort((p, q) => Math.abs(yr(p) - y) - Math.abs(yr(q) - y)) : cands;
+        if (!sorted.length) return out;
+        const typeOf = (c) => (c.media_type === "movie" ? "movie" : "series");
+        // il primo risultato conta sempre; gli altri solo se il titolo inglese è identico a quello scritto
+        const top = [sorted[0], ...sorted.slice(1, 5).filter((c) => norm(c.title || c.name) === norm(q))];
+        for (const c of top) {
+          const en = c.title || c.name;
+          const names = new Set([norm(en), norm(c.original_title || c.original_name || "")].filter((n) => n.trim()));
+          const hit = best(db.media.filter((x) => x.type === typeOf(c) && (String(x.tmdbId) === String(c.id) || names.has(norm(x.title)))), yr(c) || y);
+          if (hit) return { ...out, id: hit.id, how: String(hit.tmdbId) === String(c.id) ? "TMDB" : "titolo", tmdb: { id: c.id, type: typeOf(c), title: en, it: "", year: yr(c) || null } };
+        }
+        // ultimo tentativo: titolo italiano del primo risultato
+        const R = sorted[0], type = typeOf(R), en = R.title || R.name;
+        const d = await tm(`${R.media_type}/${R.id}`, "it-IT");
+        const itTitle = d.title || d.name || "";
+        out.tmdb = { id: R.id, type, title: en, it: itTitle, year: yr(R) || null };
+        m = best(db.media.filter((x) => x.type === type && norm(x.title) === norm(itTitle)), yr(R) || y);
+        if (m) { out.id = m.id; out.how = "titolo italiano"; }
+        return out;
+      }));
+      return json({ results, tmdbOn: !!key });
+    }
+
     if (b === "features" && req.method === "POST") {
       const { key, value } = await req.json();
       if (!["timeline", "doom"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
