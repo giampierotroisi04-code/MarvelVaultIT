@@ -371,7 +371,7 @@ function LinkCheck() {
 }
 
 // ---------- Ordine cronologico ----------
-function Timeline({ media, timeline = [], out: outInit = [], say, onDone }) {
+function Timeline({ media, timeline = [], out: outInit = [], q = "", say, onDone }) {
   const rel = byRelease("asc");
   const pos = (m) => { const i = timeline.indexOf(m.id); return i < 0 ? Infinity : i; };
   const [ids, setIds] = useState(() => [...media].sort((a, b) => (pos(a) === pos(b) ? rel(a, b) : pos(a) - pos(b))).map((m) => m.id));
@@ -389,7 +389,7 @@ function Timeline({ media, timeline = [], out: outInit = [], say, onDone }) {
     <>
       <p className="hint">Ordine cronologico (storia) della TIMELINE MARVEL: frecce, oppure scrivi la posizione e premi invio. Con "Escludi" un titolo sparisce dalla timeline (sia cronologica sia di uscita). Poi salva.</p>
       <button className="btn red small" disabled={!dirty} onClick={save}>Salva ordine</button>
-      {ids.map((id, i) => by[id] && (
+      {ids.map((id, i) => by[id] && matchQ(by[id], q) && (
         <div className="item" key={id} style={out.includes(id) ? { opacity: 0.45 } : undefined}>
           <input className="in sm" type="number" min="1" max={ids.length} defaultValue={i + 1} key={i + ":" + id} title="Posizione"
             onKeyDown={(e) => e.key === "Enter" && move(i, Math.min(ids.length, Math.max(1, +e.target.value || 1)) - 1)} />
@@ -421,7 +421,7 @@ function Vis({ k, features = {}, say, onDone }) {
 }
 
 // ---------- Road to Doomsday ----------
-function DoomAdmin({ media, doom = {}, say, onDone }) {
+function DoomAdmin({ media, doom = {}, q = "", say, onDone }) {
   const [ids, setIds] = useState(doom.ids || []);
   const [mins, setMins] = useState(doom.minutes || {});
   const [date, setDate] = useState(doom.date || "2026-12-16");
@@ -445,11 +445,11 @@ function DoomAdmin({ media, doom = {}, say, onDone }) {
       <input className="in" type="date" value={date} onChange={(e) => { setDate(e.target.value); setDirty(true); }} />
       <select className="in" value="" onChange={(e) => add(e.target.value)}>
         <option value="">+ Aggiungi progetto…</option>
-        {[...media].filter((m) => !ids.includes(m.id)).sort((a, b) => a.title.localeCompare(b.title)).map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
+        {[...media].filter((m) => !ids.includes(m.id) && matchQ(m, q)).sort((a, b) => a.title.localeCompare(b.title)).map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
       </select>
       <p className="hint">{ids.length} progetti · {Math.floor(total / 60)}h {total % 60}m totali</p>
       <button className="btn red small" disabled={!dirty} onClick={save}>Salva Road to Doomsday</button>
-      {ids.map((id, i) => by[id] && (
+      {ids.map((id, i) => by[id] && matchQ(by[id], q) && (
         <div className="item" key={id}>
           <b>{i + 1}. {by[id].title}</b>
           <div className="row2">
@@ -545,14 +545,18 @@ function AutoLink({ media, onDone }) {
   );
 }
 
+// ricerca progetti (titolo + anno, senza accenti né punteggiatura)
+const nz = (t = "") => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+const matchQ = (m, q) => !q || !q.trim() || nz(m.title + " " + (m.year || "")).includes(nz(q));
+
 // ---------- Pannello ----------
 export default function Admin({ say, onChange }) {
   const [tab, setTab] = useState("media");
   const [q, setQ] = useState("");
-  const nz = (t = "") => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  useEffect(() => setQ(""), [tab]);
   const [db, setDb] = useState(null);
   const [form, setForm] = useState(null);
-  const shown = (db?.media || []).filter((m) => !q.trim() || nz(m.title + " " + (m.year || "")).includes(nz(q))).sort((a, b) => b.createdAt - a.createdAt);
+  const shown = (db?.media || []).filter((m) => matchQ(m, q)).sort((a, b) => b.createdAt - a.createdAt);
   const reload = () => api("admin/catalog").then((d) => { setDb(d); onChange?.(); });
   useEffect(() => { api("admin/catalog").then(setDb).catch(() => say("Accesso negato")); }, []);
   if (!db) return <div className="page">Carico…</div>;
@@ -573,10 +577,10 @@ export default function Admin({ say, onChange }) {
         <button className={"chip" + (tab === "reports" ? " on" : "")} onClick={() => setTab("reports")}>Segnalazioni</button>
         <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
-      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Stats /><Backup say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
+      {db && ["media", "timeline", "doom"].includes(tab) && <input className="in" placeholder={`Cerca tra ${db.media.length} progetti…`} value={q} onChange={(e) => setQ(e.target.value)} />}
+      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Stats /><Backup say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
-          <input className="in" placeholder={`Cerca tra ${db.media.length} progetti…`} value={q} onChange={(e) => setQ(e.target.value)} />
           {q.trim() && !shown.length && <p className="hint">Nessun progetto trovato.</p>}
           {shown.map((m) => (
             <div className="item" key={m.id}>
