@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, imgUrl, art } from "./api.js";
 import { descIds, byRelease } from "./lib/util.js";
 import { I } from "./Icons.jsx";
@@ -423,8 +424,8 @@ function DoomView({ media, doom = {}, user, go, watch, toggle, setSeen }) {
             ))}
           </div>
 
-          {pick && (
-            <div className="dm-ov" onClick={() => setPick(null)}>
+          {pick && createPortal(
+            <div className="dm dm-ov" onClick={() => setPick(null)}>
               <div className="dm-sheet" onClick={(e) => e.stopPropagation()}>
                 <b>{pick.m.title}</b>
                 <small>Quali stagioni hai già visto?</small>
@@ -443,7 +444,8 @@ function DoomView({ media, doom = {}, user, go, watch, toggle, setSeen }) {
                   <button className="dm-btn" onClick={confirmSeasons}>Conferma</button>
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body
           )}
 
           <h2 className="dm-h">Calendario fino al 15 dicembre</h2>
