@@ -153,7 +153,7 @@ async function recordSend(user, m) {
   await saveStats(st);
 }
 
-const getUser = async (id) => (await store().get(`user:${id}`, { type: "json" })) || { watchlist: [], watched: [], recent: [], ratings: {} };
+const getUser = async (id) => (await store().get(`user:${id}`, { type: "json" })) || { watchlist: [], watched: [], recent: [], ratings: {}, plays: {}, days: [] };
 
 const pub = (m) => ({
   ...m,
@@ -539,8 +539,8 @@ export default async (req) => {
     return json({
       media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
       categories: db.categories.filter((x) => x.visible !== false),
-      // novità con interruttore: "off" nascosta, "admin" solo admin (default), "all" tutti
-      features: Object.fromEntries(["timeline", "doom"].map((k) => { const v = db.features?.[k] ?? "admin"; return [k, v === "all" || (v === "admin" && isAdmin)]; })),
+      // novità con interruttore: "off" nascosta, "admin" solo admin (default; il Wrap parte nascosto), "all" tutti
+      features: Object.fromEntries(["timeline", "doom", "stats", "wrap"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" ? "off" : "admin"); return [k, v === "all" || (v === "admin" && isAdmin)]; })),
       timeline: db.timeline || [],
       timelineOut: db.timelineOut || [],
       doomsday: db.doomsday || { ids: [], minutes: {}, date: "2026-12-16" },
@@ -555,6 +555,20 @@ export default async (req) => {
     const set = new Set(u[kind]);
     set.has(id) ? set.delete(id) : set.add(id);
     u[kind] = [...set];
+    await store().setJSON(`user:${user.id}`, u);
+    return json(u);
+  }
+
+  // Segna/toglie più "visti" in un colpo (es. le stagioni scelte di una serie)
+  if (a === "watched-set" && req.method === "POST") {
+    const { add = [], remove = [] } = await req.json();
+    const ok = (x) => Array.isArray(x) && x.length <= 3000 && x.every((i) => typeof i === "string");
+    if (!ok(add) || !ok(remove)) return json({ error: "bad request" }, 400);
+    const u = await getUser(user.id);
+    const set = new Set(u.watched || []);
+    remove.forEach((i) => set.delete(i));
+    add.forEach((i) => set.add(i));
+    u.watched = [...set];
     await store().setJSON(`user:${user.id}`, u);
     return json(u);
   }
@@ -594,6 +608,10 @@ export default async (req) => {
     w.add(ep ? ep.id : m.id);
     if (ep && (m.seasons || []).flatMap((x) => x.episodes).filter((e) => e.visible !== false && e.source).every((e) => w.has(e.id))) w.add(m.id);
     u.watched = [...w];
+    // statistiche personali: quante volte hai guardato ogni titolo/episodio e in quali giorni (fuso orario Italia)
+    const pk = ep ? ep.id : m.id, day = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+    u.plays = { ...(u.plays || {}), [pk]: ((u.plays || {})[pk] || 0) + 1 };
+    if (!(u.days || []).includes(day)) u.days = [...(u.days || []), day].slice(-800);
     u.recent = [{ mediaId: m.id, episodeId: ep?.id || null, at: Date.now() }, ...(u.recent || []).filter((x) => x.mediaId !== m.id)].slice(0, 12);
     await store().setJSON(`user:${user.id}`, u).catch(() => {});
     return json({ ok: true });
@@ -864,9 +882,18 @@ export default async (req) => {
 
     if (b === "features" && req.method === "POST") {
       const { key, value } = await req.json();
-      if (!["timeline", "doom"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
+      if (!["timeline", "doom", "stats", "wrap"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
       const db = await getDb();
       db.features = { ...(db.features || {}), [key]: value };
+      await saveDb(db);
+      return json({ ok: true });
+    }
+
+    // Durate in minuti dei titoli (servono per le "ore viste" nelle statistiche)
+    if (b === "runtimes" && req.method === "POST") {
+      const { runtimes = {} } = await req.json();
+      const db = await getDb();
+      for (const m of db.media) if (runtimes[m.id] != null) m.runtime = Math.max(0, Math.min(100000, Math.round(Number(runtimes[m.id]) || 0)));
       await saveDb(db);
       return json({ ok: true });
     }
