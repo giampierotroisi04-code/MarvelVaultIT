@@ -545,13 +545,45 @@ function Timeline({ media, timeline = [], out: outInit = [], q = "", say, onDone
   );
 }
 
+// ---------- Durate dei titoli (servono per le "ore viste") ----------
+function Runtimes({ media, say, onDone }) {
+  const [busy, setBusy] = useState("");
+  const todo = media.filter((m) => !m.runtime);
+  const run = async () => {
+    const found = {};
+    const flush = async () => { if (Object.keys(found).length) { await api("admin/runtimes", { body: { runtimes: { ...found } } }); Object.keys(found).forEach((k) => delete found[k]); } };
+    let ok = 0;
+    for (let i = 0; i < todo.length; i++) {
+      const m = todo[i];
+      setBusy(`TMDB ${i + 1}/${todo.length}…`);
+      try {
+        const qs = new URLSearchParams({ type: m.type, q: m.title, year: String(m.year || "").slice(0, 4) });
+        if (m.tmdbId) qs.set("id", m.tmdbId);
+        found[m.id] = (await api(`admin/tmdb-runtime?${qs}`)).minutes; ok++;
+        if (Object.keys(found).length >= 10) await flush();
+      } catch {}
+    }
+    try { await flush(); } catch {}
+    setBusy("");
+    say(`Durate trovate: ${ok} su ${todo.length}`);
+    onDone?.();
+  };
+  return (
+    <div className="box">
+      <b>Durate per le ore viste</b>
+      <p className="hint">{todo.length ? `${todo.length} titoli senza durata: le statistiche non li contano nelle ore.` : "Tutti i titoli hanno la durata."}</p>
+      {todo.length > 0 && <button className="btn small" disabled={!!busy} onClick={run}>{busy || "↻ Prendi le durate da TMDB"}</button>}
+    </div>
+  );
+}
+
 // ---------- Visibilità di una novità ----------
-function Vis({ k, features = {}, say, onDone }) {
-  const cur = features[k] ?? "admin";
+function Vis({ k, features = {}, say, onDone, label = "Visibilità", def = "admin" }) {
+  const cur = features[k] ?? def;
   const set = async (value) => { try { await api("admin/features", { body: { key: k, value } }); say(value === "all" ? "Ora è pubblica per tutti" : value === "admin" ? "Visibile solo agli admin" : "Nascosta"); onDone?.(); } catch { alert("Errore"); } };
   return (
     <div className="box">
-      <b>Visibilità</b>
+      <b>{label}</b>
       <div className="chips">
         {[["off", "Nascosta"], ["admin", "Solo admin"], ["all", "Pubblica"]].map(([v, l]) => <button key={v} className={"chip" + (cur === v ? " on" : "")} onClick={() => set(v)}>{l}</button>)}
       </div>
@@ -742,7 +774,7 @@ export default function Admin({ say, onChange }) {
         <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
       {db && ["media", "timeline", "doom"].includes(tab) && <input className="in" placeholder={`Cerca tra ${db.media.length} progetti…`} value={q} onChange={(e) => setQ(e.target.value)} />}
-      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Stats /><Backup say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
+      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Runtimes media={db.media} say={say} onDone={reload} /><Stats /><Backup say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
           {q.trim() && !shown.length && <p className="hint">Nessun progetto trovato.</p>}

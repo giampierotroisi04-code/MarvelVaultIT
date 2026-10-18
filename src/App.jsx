@@ -3,6 +3,7 @@ import { api, imgUrl, art } from "./api.js";
 import { descIds, byRelease } from "./lib/util.js";
 import { I } from "./Icons.jsx";
 import Admin from "./Admin.jsx";
+import { StatsView, WrapView } from "./Stats.jsx";
 import logo from "./logo.jpg";
 
 const tg = window.Telegram?.WebApp;
@@ -261,6 +262,27 @@ function TimelineView({ media, timeline = [], out = [], user, go }) {
   );
 }
 
+// ---------- LISTA + STATISTICHE ----------
+function ListView({ media, user, go, features = {}, me }) {
+  const [tab, setTab] = useState("list");
+  const [wrap, setWrap] = useState(false);
+  return (
+    <div className="page">
+      <h1 className="ptitle">{tab === "stats" ? "Le mie statistiche" : "La mia lista"}</h1>
+      {features.stats && (
+        <div className="chips" style={{ margin: "4px 0 14px" }}>
+          <button className={"chip" + (tab === "list" ? " on" : "")} onClick={() => setTab("list")}>Da vedere</button>
+          <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
+        </div>
+      )}
+      {tab === "stats" && features.stats
+        ? <StatsView media={media} user={user} go={go} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />
+        : <Grid items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} />}
+      {wrap && features.wrap && <WrapView media={media} user={user} me={me} onClose={() => setWrap(false)} />}
+    </div>
+  );
+}
+
 // ---------- ROAD TO DOOMSDAY (stile Doctor Doom) ----------
 const DOOM_OPEN_UNTIL = Date.parse("2026-12-16T23:59:59+01:00"); // la sezione sparisce dopo il 16 dicembre
 const CALC_UNTIL = Date.parse("2026-12-15T23:59:59+01:00");     // il piano si calcola fino al 15 dicembre
@@ -307,8 +329,28 @@ const DoomMask = () => (
   </svg>
 );
 
-function DoomView({ media, doom = {}, user, go, watch }) {
+function DoomView({ media, doom = {}, user, go, watch, toggle, setSeen }) {
   const [now, setNow] = useState(Date.now());
+  const [pick, setPick] = useState(null); // serie di cui scegliere le stagioni viste
+  const seasonsOf = (m) => [...(m.seasons || [])].sort(byNum).map((s) => ({ s, eps: (s.episodes || []).filter((e) => e.hasVideo) })).filter((x) => x.eps.length);
+  const markSeen = (m, done) => {
+    const ss = m.type === "series" ? seasonsOf(m) : [];
+    if (!ss.length) return toggle("watched", m.id);
+    const w = new Set(user.watched || []);
+    setPick({ m, sel: new Set(ss.filter(({ s, eps }) => w.has(m.id) || eps.every((e) => w.has(e.id))).map(({ s }) => s.id)) });
+  };
+  const confirmSeasons = async () => {
+    const { m, sel } = pick, w = new Set(user.watched || []), ss = seasonsOf(m), add = [], remove = [];
+    for (const { s, eps } of ss) for (const e of eps) {
+      if (sel.has(s.id) && !w.has(e.id)) add.push(e.id);
+      if (!sel.has(s.id) && w.has(e.id)) remove.push(e.id);
+    }
+    const all = ss.every(({ s }) => sel.has(s.id));
+    if (all && !w.has(m.id)) add.push(m.id);
+    if (!all && w.has(m.id)) remove.push(m.id);
+    setPick(null);
+    await setSeen(add, remove);
+  };
   const [hpd, setHpd] = useState(readHpd());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
   const rel = new Date(`${doom.date || "2026-12-16"}T00:00:00+01:00`).getTime();
@@ -391,14 +433,39 @@ function DoomView({ media, doom = {}, user, go, watch }) {
           <h2 className="dm-h">Da vedere</h2>
           <div className="dm-list">
             {picks.map(({ m, total, rem, done }, i) => (
-              <button key={m.id} className={"dm-item" + (done ? " done" : "")} onClick={() => go({ n: "media", id: m.id })}>
-                <span className="dm-n">{i + 1}</span>
-                <span className="dm-th" style={{ backgroundImage: `url(${art(m, "poster")})` }} />
-                <span className="dm-in"><b>{m.title}</b><small>{total ? `${fmtH(total)}${rem !== total && rem > 0 ? ` · restano ${fmtH(rem)}` : ""}` : "durata mancante"}</small></span>
-                <span className={"dm-tag" + (done ? " ok" : "")}>{done ? "Visto" : "Da vedere"}</span>
-              </button>
+              <div key={m.id} className={"dm-item" + (done ? " done" : "")}>
+                <button className="dm-open" onClick={() => go({ n: "media", id: m.id })}>
+                  <span className="dm-n">{i + 1}</span>
+                  <span className="dm-th" style={{ backgroundImage: `url(${art(m, "poster")})` }} />
+                  <span className="dm-in"><b>{m.title}</b><small>{total ? `${fmtH(total)}${rem !== total && rem > 0 ? ` · restano ${fmtH(rem)}` : ""}` : "durata mancante"}</small></span>
+                </button>
+                <button className={"dm-tag dm-chk" + (done ? " ok" : "")} onClick={() => markSeen(m, done)}>{done ? "✓ Visto" : "Segna visto"}</button>
+              </div>
             ))}
           </div>
+
+          {pick && (
+            <div className="dm-ov" onClick={() => setPick(null)}>
+              <div className="dm-sheet" onClick={(e) => e.stopPropagation()}>
+                <b>{pick.m.title}</b>
+                <small>Quali stagioni hai già visto?</small>
+                <div className="dm-seas">
+                  {seasonsOf(pick.m).map(({ s }) => {
+                    const on = pick.sel.has(s.id);
+                    return (
+                      <button key={s.id} className={on ? "on" : ""} onClick={() => { const n = new Set(pick.sel); on ? n.delete(s.id) : n.add(s.id); setPick({ ...pick, sel: n }); }}>
+                        <i>{on ? "✓" : ""}</i>{s.name || `Stagione ${s.number}`}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="dm-sheet-act">
+                  <button className="dm-link" onClick={() => setPick({ ...pick, sel: pick.sel.size === seasonsOf(pick.m).length ? new Set() : new Set(seasonsOf(pick.m).map(({ s }) => s.id)) })}>{pick.sel.size === seasonsOf(pick.m).length ? "Deseleziona tutte" : "Seleziona tutte"}</button>
+                  <button className="dm-btn" onClick={confirmSeasons}>Conferma</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <h2 className="dm-h">Calendario fino al 15 dicembre</h2>
           <section className="dm-card dm-ctl">
@@ -601,6 +668,13 @@ export default function App() {
       tg?.HapticFeedback?.impactOccurred("light");
     } catch { say("Voto non riuscito"); }
   };
+  const setSeen = async (add, remove) => {
+    try {
+      const u = await api("watched-set", { body: { add, remove } });
+      setBoot((b) => ({ ...b, user: u }));
+      tg?.HapticFeedback?.impactOccurred("light");
+    } catch { say("Salvataggio non riuscito"); }
+  };
   const toggle = async (k, id) => {
     const u = await api("toggle", { body: { kind: k, id } });
     setBoot((b) => ({ ...b, user: u }));
@@ -693,8 +767,8 @@ export default function App() {
       );
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
     else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} />;
-    else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} />;
-    else if (view.n === "list") body = <div className="page"><h1 className="ptitle">La mia lista</h1><Grid items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} /></div>;
+    else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} toggle={toggle} setSeen={setSeen} />;
+    else if (view.n === "list") body = <ListView media={media} user={user} go={go} features={features} me={me} />;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 

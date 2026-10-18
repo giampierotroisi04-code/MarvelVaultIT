@@ -253,7 +253,21 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .dm-list{display:flex;flex-direction:column;gap:8px}
 .dm-item{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:8px 12px 8px 8px;color:inherit;text-align:left;cursor:pointer;font-family:inherit;transition:border-color .2s,box-shadow .2s}
 .dm-item:hover,.dm-item:active{border-color:rgba(31,224,106,.5);box-shadow:0 0 16px rgba(31,224,106,.18)}
-.dm-item.done{opacity:.5}
+.dm-item.done .dm-open{opacity:.5}
+.dm-open{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:none;border:0;padding:0;color:inherit;text-align:left;font-family:inherit;cursor:pointer}
+.dm-chk{cursor:pointer;background:transparent;font-family:inherit;flex:none}
+.dm-ov{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;backdrop-filter:blur(3px)}
+.dm-sheet{width:100%;max-height:78vh;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:20px 18px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(180deg,#0b1812,#060b08);border:1px solid var(--bd);border-bottom:0;border-radius:22px 22px 0 0;box-shadow:0 -10px 40px rgba(31,224,106,.18)}
+.dm-sheet>b{font-size:18px;color:#eafff2}
+.dm-sheet>small{color:var(--mu);font-size:13px}
+.dm-seas{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.dm-seas button{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid var(--bd);background:rgba(0,0,0,.35);color:inherit;font-family:inherit;font-size:15px;text-align:left;cursor:pointer}
+.dm-seas button i{flex:none;width:22px;height:22px;border-radius:7px;border:1.5px solid var(--bd);display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800;font-size:14px;color:#03140a}
+.dm-seas button.on{border-color:var(--ac);box-shadow:0 0 14px rgba(31,224,106,.18)}
+.dm-seas button.on i{background:var(--ac);border-color:var(--ac)}
+.dm-sheet-act{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dm-sheet-act .dm-btn{margin:0;align-self:auto}
+.dm-sheet-act .dm-link{margin:0}
 .dm-n{width:22px;text-align:center;font-family:"Bebas Neue",Impact,sans-serif;color:var(--ac);font-size:20px;font-variant-numeric:tabular-nums;text-shadow:0 0 8px var(--glow)}
 .dm-th{flex:0 0 40px;height:58px;border-radius:7px;background:#101a15 center/cover;border:1px solid var(--bd)}
 .dm-in{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -273,3 +287,34 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .dm-date b{display:block;font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:26px;color:var(--ac);text-shadow:0 0 10px var(--glow)}.dm-date small{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.06em}
 .dm-todo{flex:1;display:flex;flex-direction:column;gap:3px;font-size:14px;justify-content:center}
 .dm-todo div{display:flex;justify-content:space-between;gap:8px}.dm-todo em{font-style:normal;color:var(--ac);white-space:nowrap;opacity:.85}
+
+/* ---------- statistiche personali ---------- */
+.st-wrap{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;margin-bottom:14px;padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,.3);color:#fff;background:linear-gradient(120deg,var(--red2),var(--red) 55%,#7a0b10)}
+.st-wrap small{font-size:10px;letter-spacing:.2em;font-weight:800;opacity:.85}
+.st-wrap b{font-size:18px;line-height:1.2}
+.st-wrap span{display:flex;align-items:center;gap:4px;font-size:13px;opacity:.9}
+.st-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.st-card{display:flex;flex-direction:column;gap:4px;background:var(--s1);border:1px solid var(--bd);border-radius:16px;padding:14px}
+.st-card.big{grid-column:1/-1;border-color:rgba(227,22,28,.5);background:linear-gradient(160deg,rgba(227,22,28,.14),var(--s1) 60%)}
+.st-card small,.st-row small{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx2);font-weight:700}
+.st-card b{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:40px;line-height:1;letter-spacing:.02em}
+.st-card b i{font-style:normal;font-size:16px;color:var(--tx2);letter-spacing:.04em}
+.st-card em,.st-row em{font-style:normal;font-size:12px;color:var(--tx2)}
+.st-bar{height:8px;border-radius:99px;background:var(--s2);overflow:hidden;margin:12px 0 4px}
+.st-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--green),#fff,var(--red))}
+.st-row{display:flex;flex-direction:column;gap:3px;padding:14px 0;border-bottom:1px solid var(--bd)}
+.st-row b{font-size:17px;line-height:1.25}
+
+/* ---------- Wrap (a schermo intero) ---------- */
+.wrap{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;justify-content:center;padding:calc(28px + env(safe-area-inset-top)) 24px calc(28px + env(safe-area-inset-bottom));background:radial-gradient(ellipse 90% 55% at 50% 0,rgba(227,22,28,.4),transparent 70%),radial-gradient(ellipse 70% 40% at 50% 100%,rgba(0,146,70,.25),transparent 70%),#000}
+.wrap-dots{position:absolute;left:20px;right:64px;top:calc(18px + env(safe-area-inset-top));display:flex;gap:4px}
+.wrap-dots i{flex:1;height:3px;border-radius:3px;background:rgba(255,255,255,.2)}
+.wrap-dots i.on{background:#fff}
+.wrap-x{position:absolute;right:14px;top:calc(8px + env(safe-area-inset-top));width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.1);color:#fff;display:flex;align-items:center;justify-content:center}
+.wrap-body{flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px;animation:wrapin .45s ease both}
+.wrap-body small{font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:var(--red);font-weight:800}
+.wrap-body h1{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:64px;line-height:1;letter-spacing:.02em;background:none;padding:0;text-transform:uppercase;word-break:break-word}
+.wrap-body p{font-size:17px;color:#d4d4dc;max-width:30ch}
+.wrap-nav{display:flex;gap:10px}
+.wrap-nav .btn{flex:1;padding:14px}
+@keyframes wrapin{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
