@@ -318,3 +318,6 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .wrap-nav{display:flex;gap:10px}
 .wrap-nav .btn{flex:1;padding:14px}
 @keyframes wrapin{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+
+.nav.many button span{padding:5px 10px}
+.nav.many button small{font-size:9.5px}

@@ -3,7 +3,7 @@ import { api, imgUrl, art } from "./api.js";
 import { descIds, byRelease } from "./lib/util.js";
 import { I } from "./Icons.jsx";
 import Admin from "./Admin.jsx";
-import { StatsView, WrapView } from "./Stats.jsx";
+import { StatsPage } from "./Stats.jsx";
 import logo from "./logo.jpg";
 
 const tg = window.Telegram?.WebApp;
@@ -258,27 +258,6 @@ function TimelineView({ media, timeline = [], out = [], user, go }) {
         })}
       </div>
       {!items.length && <p className="hint">Nessun titolo nella timeline.</p>}
-    </div>
-  );
-}
-
-// ---------- LISTA + STATISTICHE ----------
-function ListView({ media, user, go, features = {}, me }) {
-  const [tab, setTab] = useState("list");
-  const [wrap, setWrap] = useState(false);
-  return (
-    <div className="page">
-      <h1 className="ptitle">{tab === "stats" ? "Le mie statistiche" : "La mia lista"}</h1>
-      {features.stats && (
-        <div className="chips" style={{ margin: "4px 0 14px" }}>
-          <button className={"chip" + (tab === "list" ? " on" : "")} onClick={() => setTab("list")}>Da vedere</button>
-          <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
-        </div>
-      )}
-      {tab === "stats" && features.stats
-        ? <StatsView media={media} user={user} go={go} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />
-        : <Grid items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} />}
-      {wrap && features.wrap && <WrapView media={media} user={user} me={me} onClose={() => setWrap(false)} />}
     </div>
   );
 }
@@ -768,18 +747,19 @@ export default function App() {
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
     else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} />;
     else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} toggle={toggle} setSeen={setSeen} />;
-    else if (view.n === "list") body = <ListView media={media} user={user} go={go} features={features} me={me} />;
+    else if (view.n === "list") body = <div className="page"><h1 className="ptitle">La mia lista</h1><Grid items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} /></div>;
+    else if (view.n === "stats" && features.stats) body = <StatsPage media={media} user={user} me={me} features={features} />;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 
-  const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ...(features.timeline ? [["timeline", I.Clock, "Timeline"]] : []), ...(features.doom && Date.now() <= DOOM_OPEN_UNTIL ? [["doom", I.Mask, "Doomsday"]] : []), ["list", I.Bookmark, "Lista"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
+  const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ...(features.timeline ? [["timeline", I.Clock, "Timeline"]] : []), ...(features.doom && Date.now() <= DOOM_OPEN_UNTIL ? [["doom", I.Mask, "Doomsday"]] : []), ...(features.stats ? [["stats", I.Chart, "Stats"]] : []), ["list", I.Bookmark, "Lista"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
   return (
     <>
       {splash && <div className="splash"><img src={logo} alt="" /><div className="tri" /></div>}
       {!boot.error && !boot.gate && <Header onSearch={() => tab({ n: "search" })} />}
       {body}
       {!boot.error && !boot.gate && (
-        <nav className="nav">
+        <nav className={"nav" + (items.length > 5 ? " many" : "")}>
           {items.map(([n, Ic, l]) => (
             <button key={n} className={view.n === n ? "on" : ""} onClick={() => tab({ n })}><span><Ic size={21} /></span><small>{l}</small></button>
           ))}

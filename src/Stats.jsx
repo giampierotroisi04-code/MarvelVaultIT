@@ -89,3 +89,15 @@ export function WrapView({ media, user, me, onClose }) {
     </div>
   );
 }
+
+// ---------- Sezione Statistiche (come Timeline e Doomsday) ----------
+export function StatsPage({ media, user, me, features = {} }) {
+  const [wrap, setWrap] = useState(false);
+  return (
+    <div className="page">
+      <h1 className="ptitle">Le mie statistiche</h1>
+      <StatsView media={media} user={user} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />
+      {wrap && features.wrap && <WrapView media={media} user={user} me={me} onClose={() => setWrap(false)} />}
+    </div>
+  );
+}
