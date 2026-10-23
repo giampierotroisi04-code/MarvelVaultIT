@@ -530,6 +530,20 @@ export default async (req) => {
     return json({ user: { id: user.id, name: user.first_name }, isAdmin, botUsername: process.env.BOT_USERNAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
   }
 
+  // foto profilo più recente, letta da Telegram (data URL, perché <img> non può inviare l'header di autenticazione)
+  if (a === "avatar") {
+    try {
+      const ph = await tg("getUserProfilePhotos", { user_id: user.id, limit: 1 });
+      const sizes = ph?.result?.photos?.[0];
+      if (!sizes?.length) return json({ photo: "" });
+      const pick = sizes.find((x) => x.width >= 160) || sizes[sizes.length - 1];
+      const f = await tg("getFile", { file_id: pick.file_id });
+      if (!f?.result?.file_path) return json({ photo: "" });
+      const buf = Buffer.from(await fetch(`https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${f.result.file_path}`).then((r) => r.arrayBuffer()));
+      return json({ photo: `data:image/jpeg;base64,${buf.toString("base64")}` });
+    } catch { return json({ photo: "" }); }
+  }
+
   // tutto il resto richiede l'iscrizione al canale (gli admin sono esclusi)
   if (!isAdmin && !(await isSubscribed(user.id)).ok) return json({ error: "not_subscribed" }, 403);
 
