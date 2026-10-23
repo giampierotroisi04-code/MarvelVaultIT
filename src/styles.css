@@ -69,7 +69,7 @@ button{font-family:inherit;cursor:pointer}
 .thumb img,.thumb .ph{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
 .pl{position:absolute;inset:0;margin:auto;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center}
 .ep-info{min-width:0;display:flex;flex-direction:column;gap:3px}
-.ep-info b{font-size:14px}.ep-info p{color:var(--tx2);font-size:12.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ep-info b{font-size:14px}.ep-info p{color:var(--tx2);font-size:12.5px}
 /* ricerca */
 .searchbox{display:flex;align-items:center;gap:10px;background:var(--s2);border:1px solid var(--bd);border-radius:14px;padding:0 14px;color:var(--tx2)}
 .searchbox input{flex:1;background:none;border:0;outline:0;color:var(--tx);font:inherit;padding:14px 0}
@@ -323,3 +323,18 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 
 .nav.many button span{padding:5px 10px}
 .nav.many button small{font-size:9.5px}
+
+/* ---------- descrizioni espandibili, TMDB, profilo ---------- */
+.xwrap{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.xp{display:-webkit-box;-webkit-line-clamp:var(--l,3);-webkit-box-orient:vertical;overflow:hidden;margin:0}
+.xp.open{display:block;-webkit-line-clamp:unset;overflow:visible}
+.lnk.more{color:#fff;font-weight:700;font-size:12.5px;padding:2px 0}
+.tmdb{font-size:11px;color:var(--tx2);margin:2px 0 10px}
+.tmdb a{color:var(--tx2);text-decoration:underline;font-weight:700}
+.prof-head{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+.prof-head .ptitle{margin:0;word-break:break-all}
+.avatar{width:72px;height:72px;flex:0 0 72px;border-radius:50%;object-fit:cover;border:2px solid #fff;background:var(--s2)}
+.avatar.ph{display:flex;align-items:center;justify-content:center;font-family:"Bebas Neue",Impact,sans-serif;font-size:34px;background:var(--red)}
+.prof-sec{margin-top:22px}
+.prof-act{display:flex;flex-direction:column;gap:10px}
+.prof-act .btn{justify-content:center}

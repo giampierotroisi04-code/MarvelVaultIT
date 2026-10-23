@@ -1,16 +1,46 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, imgUrl, art } from "./api.js";
 import { descIds, byRelease } from "./lib/util.js";
 import { I } from "./Icons.jsx";
 import Admin from "./Admin.jsx";
-import { StatsPage } from "./Stats.jsx";
+import { StatsView, WrapView } from "./Stats.jsx";
 import logo from "./logo.jpg";
 
 const tg = window.Telegram?.WebApp;
 const catSort = (c) => { const o = c?.mediaOrder || []; const rel = byRelease("asc"); return (a, b) => { const x = o.indexOf(a.id), y = o.indexOf(b.id); return x >= 0 && y >= 0 ? x - y : x >= 0 ? -1 : y >= 0 ? 1 : rel(a, b); }; };
 const byNum = (a, b) => (a.number || 0) - (b.number || 0);
 const kind = (m) => (m.type === "movie" ? "Film" : "Serie TV");
+
+// Testo lungo: accorciato, con "Leggi tutto" / "Riduci"
+function Clamp({ text, lines = 3, className = "" }) {
+  const ref = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [over, setOver] = useState(false);
+  useLayoutEffect(() => {
+    const check = () => { const el = ref.current; if (el && !open) setOver(el.scrollHeight > el.clientHeight + 1); };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [text, open, lines]);
+  if (!text) return null;
+  return (
+    <div className="xwrap">
+      <p ref={ref} className={"xp " + className + (open ? " open" : "")} style={{ "--l": lines }}>{text}</p>
+      {(over || open) && <button className="lnk more" onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>{open ? "Riduci" : "Leggi tutto"}</button>}
+    </div>
+  );
+}
+
+// Attribuzione TMDB (richiesta dai ToS)
+const TMDB_URL = "https://www.themoviedb.org";
+const openTmdb = (e) => {
+  e.preventDefault(); e.stopPropagation();
+  tg?.openLink ? tg.openLink(TMDB_URL) : window.open(TMDB_URL, "_blank", "noopener");
+};
+const TmdbCredit = () => (
+  <p className="tmdb">Dati forniti da <a href={TMDB_URL} target="_blank" rel="noopener noreferrer" onClick={openTmdb}>TMDB</a></p>
+);
 
 function Poster({ m }) {
   const src = art(m, "poster");
@@ -104,21 +134,31 @@ function RequestSheet({ initial, onClose, say }) {
 
 const REASONS = [["no_play", "Il video non parte"], ["audio", "Audio o sottotitoli"], ["quality", "Qualità scadente"], ["wrong", "Contenuto sbagliato"], ["other", "Altro"]];
 
-function ReportSheet({ m, onClose, say }) {
+function ReportSheet({ m: fixed, media = [], onClose, say }) {
+  const [mid, setMid] = useState("");
+  const m = fixed || media.find((x) => x.id === mid);
   const [reason, setReason] = useState("no_play");
   const [ep, setEp] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const eps = [...(m.seasons || [])].sort(byNum).flatMap((s) =>
+  const eps = [...(m?.seasons || [])].sort(byNum).flatMap((s) =>
     [...s.episodes].sort(byNum).map((e) => ({ id: e.id, label: `S${s.number} · E${e.number}${e.title ? " – " + e.title : ""}` })));
   const send = async () => {
+    if (!m) return say("Scegli prima il titolo");
     setBusy(true);
     try { await api("report", { body: { mediaId: m.id, episodeId: ep || undefined, reason, note } }); say("Segnalazione inviata, grazie"); onClose(); }
     catch (e) { say(e.data?.error === "limit" ? "Hai raggiunto il limite di segnalazioni di oggi" : "Invio non riuscito"); setBusy(false); }
   };
   return (
     <Sheet title="Segnala un problema" onClose={onClose}>
-      <p className="hint">{m.title}</p>
+      {fixed
+        ? <p className="hint">{fixed.title}</p>
+        : (
+          <select className="in" value={mid} onChange={(e) => { setMid(e.target.value); setEp(""); }}>
+            <option value="">Scegli il film o la serie…</option>
+            {[...media].sort((a, b) => a.title.localeCompare(b.title)).map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}
+          </select>
+        )}
       <div className="wrapchips">
         {REASONS.map(([k, l]) => <button key={k} className={"chip" + (reason === k ? " on" : "")} onClick={() => setReason(k)}>{l}</button>)}
       </div>
@@ -172,7 +212,8 @@ function Detail({ m, user, watch, toggle, say, rate, initSeason }) {
           <span className="ravg">★ {m.rating ? m.rating.avg.toFixed(1) : "–"}<small>{m.rating ? ` (${m.rating.count} ${m.rating.count === 1 ? "voto" : "voti"})` : " nessun voto"}</small></span>
           <div className="rmine"><small>Il tuo voto</small><Stars value={user.ratings?.[m.id] || 0} onRate={(v) => rate(m.id, v)} /></div>
         </div>
-        <p className="overview">{m.overview}</p>
+        <Clamp text={m.overview} lines={4} className="overview" />
+        <TmdbCredit />
         {m.type === "series" && (
           <>
             <div className="chips">
@@ -189,7 +230,7 @@ function Detail({ m, user, watch, toggle, say, rate, initSeason }) {
                 </div>
                 <div className="ep-info">
                   <b>{e.number}. {e.title || `Episodio ${e.number}`}</b>
-                  {e.overview && <p>{e.overview}</p>}
+                  {e.overview && <Clamp text={e.overview} lines={2} />}
                   <button className="lnk" onClick={() => toggle("watched", e.id)}>{seen(e.id) ? "Visto" : "Segna come visto"}</button>
                 </div>
               </div>
@@ -199,6 +240,55 @@ function Detail({ m, user, watch, toggle, say, rate, initSeason }) {
         <button className="lnk flag" onClick={() => setRep(true)}><I.Flag size={14} /> Segnala un problema</button>
       </div>
       {rep && <ReportSheet m={m} say={say} onClose={() => setRep(false)} />}
+    </div>
+  );
+}
+
+// ---------- PROFILO ----------
+function ProfilePage({ media, user, me, features = {}, go, say }) {
+  const [wrap, setWrap] = useState(false);
+  const [rep, setRep] = useState(false);
+  const [req, setReq] = useState(false);
+  const [imgErr, setImgErr] = useState(false);
+  const tu = tg?.initDataUnsafe?.user || {};
+  const username = tu.username || "";
+  const full = [tu.first_name || me?.user?.name, tu.last_name].filter(Boolean).join(" ");
+  const name = username ? "@" + username : full || "Utente";
+  const photo = tu.photo_url && !imgErr ? tu.photo_url : "";
+  const list = media.filter((m) => user.watchlist.includes(m.id));
+  return (
+    <div className="page prof">
+      <div className="prof-head">
+        {photo
+          ? <img className="avatar" src={photo} alt="" onError={() => setImgErr(true)} />
+          : <span className="avatar ph">{name.replace("@", "").charAt(0).toUpperCase()}</span>}
+        <h1 className="ptitle">{name}</h1>
+      </div>
+
+      <section className="prof-sec">
+        <div className="sec"><h2>La mia lista</h2></div>
+        {list.length ? <Grid items={list} go={go} user={user} /> : <p className="hint">Nessun titolo in lista. Salva film e serie con il segnalibro.</p>}
+      </section>
+
+      {features.stats && (
+        <section className="prof-sec">
+          <div className="sec"><h2>Le mie statistiche</h2></div>
+          <StatsView media={media} user={user} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />
+        </section>
+      )}
+
+      <section className="prof-sec">
+        <div className="sec"><h2>Assistenza</h2></div>
+        <div className="prof-act">
+          <button className="btn" onClick={() => setRep(true)}><I.Flag size={16} /> Segnala un problema</button>
+          <button className="btn" onClick={() => setReq(true)}><I.Send size={16} /> Richiedi un progetto</button>
+        </div>
+      </section>
+
+      <TmdbCredit />
+      {wrap && features.wrap && <WrapView media={media} user={user} me={me} onClose={() => setWrap(false)} />}
+      {rep && <ReportSheet media={media} say={say} onClose={() => setRep(false)} />}
+      {req && <RequestSheet say={say} onClose={() => setReq(false)} />}
     </div>
   );
 }
@@ -749,12 +839,11 @@ export default function App() {
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
     else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} />;
     else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} toggle={toggle} setSeen={setSeen} />;
-    else if (view.n === "list") body = <div className="page"><h1 className="ptitle">La mia lista</h1><Grid items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} /></div>;
-    else if (view.n === "stats" && features.stats) body = <StatsPage media={media} user={user} me={me} features={features} />;
+    else if (view.n === "profile" || view.n === "list" || view.n === "stats") body = <ProfilePage media={media} user={user} me={me} features={features} go={go} say={say} />;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 
-  const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ...(features.timeline ? [["timeline", I.Clock, "Timeline"]] : []), ...(features.doom && Date.now() <= DOOM_OPEN_UNTIL ? [["doom", I.Mask, "Doomsday"]] : []), ...(features.stats ? [["stats", I.Chart, "Stats"]] : []), ["list", I.Bookmark, "Lista"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
+  const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ...(features.timeline ? [["timeline", I.Clock, "Timeline"]] : []), ...(features.doom && Date.now() <= DOOM_OPEN_UNTIL ? [["doom", I.Mask, "Doomsday"]] : []), ["profile", I.User, "Profilo"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
   return (
     <>
       {splash && <div className="splash"><img src={logo} alt="" /><div className="tri" /></div>}
