@@ -682,6 +682,28 @@ function Backup({ say }) {
   );
 }
 
+// ---------- Anniversari ----------
+function Anniv({ say }) {
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+  const run = async () => {
+    setBusy(true);
+    try { setRes(await api("admin/anniv", { body: {} })); say("Ricerca completata"); }
+    catch (e) { alert(e.data?.error || "Ricerca non riuscita"); }
+    setBusy(false);
+  };
+  return (
+    <div className="box">
+      <b>Anniversari di uscita</b>
+      <p className="hint">Ogni mattina il bot avvisa solo gli admin se oggi un titolo compie gli anni. Qui puoi forzare la ricerca subito: se c'è qualcosa, ti arriva in chat.</p>
+      <button className="btn small" disabled={busy} onClick={run}>{busy ? "Cerco…" : "Forza ricerca"}</button>
+      {res && (res.found.length
+        ? <p className="hint">Oggi ({res.day}): {res.found.map((x) => `${x.title} (${x.years} ${x.years === 1 ? "anno" : "anni"})`).join(", ")}. Inviato in chat.</p>
+        : <p className="hint">Nessun anniversario oggi ({res.day}). Contano solo i titoli con la data di uscita completa.</p>)}
+    </div>
+  );
+}
+
 // ---------- Da collegare (post del canale non riconosciuti con certezza) ----------
 function AutoLink({ media, onDone }) {
   const [items, setItems] = useState(null);
@@ -774,7 +796,7 @@ export default function Admin({ say, onChange }) {
         <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
       {db && ["media", "timeline", "doom"].includes(tab) && <input className="in" placeholder={`Cerca tra ${db.media.length} progetti…`} value={q} onChange={(e) => setQ(e.target.value)} />}
-      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Runtimes media={db.media} say={say} onDone={reload} /><Stats /><Backup say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
+      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Runtimes media={db.media} say={say} onDone={reload} /><Stats /><Backup say={say} /><Anniv say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
           {q.trim() && !shown.length && <p className="hint">Nessun progetto trovato.</p>}
