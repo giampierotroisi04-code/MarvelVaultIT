@@ -976,6 +976,29 @@ export default async (req) => {
       return minutes ? json({ minutes, tmdbId: id }) : json({ error: "Durata non trovata" }, 404);
     }
 
+    // cerca su TMDB le date di uscita mancanti (solo dove manca la data completa) e le salva nel catalogo
+    if (b === "tmdb-dates" && req.method === "POST") {
+      if (!process.env.TMDB_API_KEY) return json({ error: "TMDB non configurato" }, 400);
+      const full = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+      const db = await getDb();
+      const todo = db.media.filter((m) => !full(m.releaseDate));
+      const withId = todo.filter((m) => m.tmdbId), noTmdb = todo.filter((m) => !m.tmdbId).map((m) => m.title);
+      const batch = withId.slice(0, 120); // se sono tanti, rilancia: continua dai rimanenti
+      const updated = [], failed = [];
+      for (let i = 0; i < batch.length; i += 8) {
+        await Promise.all(batch.slice(i, i + 8).map(async (m) => {
+          const d = await fetch(`https://api.themoviedb.org/3/${m.type === "series" ? "tv" : "movie"}/${encodeURIComponent(m.tmdbId)}?api_key=${process.env.TMDB_API_KEY}&language=it-IT`).then((x) => x.json()).catch(() => null);
+          const date = d?.release_date || d?.first_air_date || "";
+          if (!full(date)) return failed.push(m.title);
+          m.releaseDate = date;
+          if (!m.year) m.year = date.slice(0, 4);
+          updated.push({ title: m.title, date });
+        }));
+      }
+      if (updated.length) await saveDb(db);
+      return json({ ok: true, updated, failed, noTmdb, remaining: Math.max(0, withId.length - batch.length) });
+    }
+
     // forza la ricerca degli anniversari di oggi (ignora il "già inviato oggi") e manda il risultato agli admin
     if (b === "anniv" && req.method === "POST") {
       const r = await runAnniversaries({ store: store(), tg, admins: admins(), site: SITE, force: true });
