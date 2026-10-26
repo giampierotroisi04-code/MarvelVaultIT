@@ -28,16 +28,15 @@ export function computeStats(media = [], user = {}) {
       const withVideo = all.filter((e) => e.hasVideo);
       const per = m.runtime && all.length ? Math.round(m.runtime / all.length) : 0;
       const mins = (e) => e.runtime || per;
-      const doneEps = all.filter((e) => w.has(e.id));
-      for (const e of doneEps) minutes += mins(e) * Math.max(1, plays[e.id] || 0);
-      // serie segnata come vista a mano, senza episodi spuntati: conta una volta intera
-      if (w.has(m.id) && !doneEps.length) minutes += m.runtime || all.reduce((t, e) => t + mins(e), 0);
+      // le ore contano SOLO le visioni reali (video ricevuto dal bot), non i "segna come visto" a mano
+      for (const e of all) minutes += mins(e) * (plays[e.id] || 0);
       if (w.has(m.id) || (withVideo.length && withVideo.every((e) => w.has(e.id)))) seen++;
       // quante volte hai visto la serie intera = il minimo tra le visioni dei suoi episodi
       const full = withVideo.length ? Math.min(...withVideo.map((e) => plays[e.id] || 0)) : 0;
       if (full > 0) times.push({ m, v: full });
     } else {
-      if (w.has(m.id)) { seen++; minutes += (m.runtime || 0) * Math.max(1, plays[m.id] || 0); }
+      if (w.has(m.id)) seen++;
+      minutes += (m.runtime || 0) * (plays[m.id] || 0);
       if (plays[m.id] > 0) times.push({ m, v: plays[m.id] });
     }
   }
@@ -54,7 +53,7 @@ export function computeStats(media = [], user = {}) {
     best, worst: best[0] && worst[0] && best[0].v === worst[0].v ? [] : worst,
     ratedCount: rated.length,
     avg: rated.length ? Math.round((rated.reduce((t, r) => t + r.v, 0) / rated.length) * 10) / 10 : 0,
-    missingRuntime: media.some((m) => w.has(m.id) && !m.runtime && m.type !== "series"),
+    missingRuntime: media.some((m) => plays[m.id] > 0 && !m.runtime && m.type !== "series"),
   };
 }
 
