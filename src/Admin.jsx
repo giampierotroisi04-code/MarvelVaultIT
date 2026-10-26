@@ -695,14 +695,14 @@ function TmdbDates({ say, onDone }) {
   return (
     <div className="box">
       <b>Date di uscita da TMDB</b>
-      <p className="hint">Cerca su TMDB la data di uscita completa dei titoli che non ce l'hanno (servono per gli anniversari). Non tocca le date già presenti.</p>
+      <p className="hint">Cerca su TMDB la data di uscita completa dei titoli che non ce l'hanno (servono per gli anniversari). Se un titolo non è collegato a TMDB lo cerca per nome e anno e lo collega solo se la corrispondenza è sicura. Non tocca le date già presenti.</p>
       <button className="btn small" disabled={busy} onClick={run}>{busy ? "Cerco…" : "Forza ricerca date"}</button>
       {res && (
         <>
-          <p className="hint">Aggiornati: {res.updated.length}{res.failed.length ? ` · senza data su TMDB: ${res.failed.length}` : ""}{res.noTmdb.length ? ` · non collegati a TMDB: ${res.noTmdb.length}` : ""}.</p>
+          <p className="hint">Date aggiornate: {res.updated.length} · collegati a TMDB: {res.linked.length}{res.failed.length ? ` · senza data su TMDB: ${res.failed.length}` : ""}{res.unsure.length ? ` · non trovati con sicurezza: ${res.unsure.length}` : ""}.</p>
           {res.remaining > 0 && <p className="hint">Ne restano {res.remaining}: premi di nuovo per continuare.</p>}
           {res.failed.length > 0 && <p className="hint">Senza data: {res.failed.join(", ")}</p>}
-          {res.noTmdb.length > 0 && <p className="hint">Da collegare a TMDB a mano: {res.noTmdb.join(", ")}</p>}
+          {res.unsure.length > 0 && <p className="hint">Da collegare a mano con il bottone TMDB: {res.unsure.join(", ")}</p>}
         </>
       )}
     </div>
