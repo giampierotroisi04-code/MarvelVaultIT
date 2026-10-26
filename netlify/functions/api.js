@@ -976,32 +976,49 @@ export default async (req) => {
       return minutes ? json({ minutes, tmdbId: id }) : json({ error: "Durata non trovata" }, 404);
     }
 
-    // cerca su TMDB le date di uscita mancanti (solo dove manca la data completa) e le salva nel catalogo
+    // cerca su TMDB le date di uscita mancanti; se il titolo non è collegato a TMDB prova prima a collegarlo (per titolo + anno)
     if (b === "tmdb-dates" && req.method === "POST") {
-      if (!process.env.TMDB_API_KEY) return json({ error: "TMDB non configurato" }, 400);
+      const key = process.env.TMDB_API_KEY;
+      if (!key) return json({ error: "TMDB non configurato" }, 400);
       const full = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+      const yr = (d) => Number(String(d || "").slice(0, 4)) || 0;
       const db = await getDb();
       const todo = db.media.filter((m) => !full(m.releaseDate));
-      const withId = todo.filter((m) => m.tmdbId), noTmdb = todo.filter((m) => !m.tmdbId).map((m) => m.title);
-      const batch = withId.slice(0, 120); // se sono tanti, rilancia: continua dai rimanenti
-      const updated = [], failed = [];
+      const batch = todo.slice(0, 120); // se sono tanti, rilancia: continua dai rimanenti
+      const updated = [], linked = [], failed = [], unsure = [];
+      const tmdb = (path, q = "") => fetch(`https://api.themoviedb.org/3/${path}?api_key=${key}&language=it-IT${q}`).then((x) => x.json()).catch(() => null);
+      const link = async (m) => { // trova il titolo su TMDB solo se la corrispondenza è sicura
+        const kind = m.type === "series" ? "tv" : "movie";
+        const my = yr(m.releaseDate) || yr(m.year), nt = norm(m.title);
+        const r = await tmdb(`search/${kind}`, `&query=${encodeURIComponent(m.title)}`);
+        const c = (r?.results || []).slice(0, 8).map((x) => {
+          const names = [x.title, x.name, x.original_title, x.original_name].filter(Boolean).map(norm);
+          const y = yr(x.release_date || x.first_air_date);
+          return { x, y, exact: names.includes(nt), near: names.some((n) => n.includes(nt) || nt.includes(n)), yearOk: !my || Math.abs(y - my) <= 1 };
+        });
+        const hit = c.find((z) => z.exact && z.yearOk) || (my ? c.find((z) => z.near && z.yearOk) : null);
+        return hit?.x.id || null;
+      };
       for (let i = 0; i < batch.length; i += 8) {
         await Promise.all(batch.slice(i, i + 8).map(async (m) => {
-          const d = await fetch(`https://api.themoviedb.org/3/${m.type === "series" ? "tv" : "movie"}/${encodeURIComponent(m.tmdbId)}?api_key=${process.env.TMDB_API_KEY}&language=it-IT`).then((x) => x.json()).catch(() => null);
+          let id = m.tmdbId, wasLinked = false;
+          if (!id) { id = await link(m); if (!id) return unsure.push(m.title); wasLinked = true; }
+          const d = await tmdb(`${m.type === "series" ? "tv" : "movie"}/${encodeURIComponent(id)}`);
           const date = d?.release_date || d?.first_air_date || "";
+          if (wasLinked) { m.tmdbId = id; linked.push(m.title); }
           if (!full(date)) return failed.push(m.title);
           m.releaseDate = date;
           if (!m.year) m.year = date.slice(0, 4);
           updated.push({ title: m.title, date });
         }));
       }
-      if (updated.length) await saveDb(db);
-      return json({ ok: true, updated, failed, noTmdb, remaining: Math.max(0, withId.length - batch.length) });
+      if (updated.length || linked.length) await saveDb(db);
+      return json({ ok: true, updated, linked, failed, unsure, remaining: Math.max(0, todo.length - batch.length) });
     }
 
     // forza la ricerca degli anniversari di oggi (ignora il "già inviato oggi") e manda il risultato agli admin
     if (b === "anniv" && req.method === "POST") {
-      const r = await runAnniversaries({ store: store(), tg, admins: admins(), site: SITE, force: true });
+      const r = await runAnniversaries({ store: store(), tg, admins: admins(), site: SITE, bot: process.env.BOT_USERNAME || "", force: true });
       return json({ ok: true, day: r.day, found: r.found });
     }
 
