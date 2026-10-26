@@ -1,6 +1,7 @@
 import { getStore } from "@netlify/blobs";
 import crypto from "node:crypto";
 import { parseLink, buildLink } from "../../src/lib/util.js";
+import { runAnniversaries } from "../../src/lib/anniv.js";
 
 export const config = { path: "/api/*" };
 
@@ -973,6 +974,12 @@ export default async (req) => {
       const avg = (d.episode_run_time || [])[0] || 45; // se un episodio non ha durata si usa la media
       const minutes = all.flat().filter(Boolean).reduce((t, e) => t + (e.runtime || avg), 0);
       return minutes ? json({ minutes, tmdbId: id }) : json({ error: "Durata non trovata" }, 404);
+    }
+
+    // forza la ricerca degli anniversari di oggi (ignora il "già inviato oggi") e manda il risultato agli admin
+    if (b === "anniv" && req.method === "POST") {
+      const r = await runAnniversaries({ store: store(), tg, admins: admins(), site: SITE, force: true });
+      return json({ ok: true, day: r.day, found: r.found });
     }
 
     if (b === "backup" && req.method === "POST") {
