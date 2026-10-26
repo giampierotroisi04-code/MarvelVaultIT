@@ -682,6 +682,33 @@ function Backup({ say }) {
   );
 }
 
+// ---------- Date di uscita da TMDB ----------
+function TmdbDates({ say, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+  const run = async () => {
+    setBusy(true);
+    try { const r = await api("admin/tmdb-dates", { body: {} }); setRes(r); say(r.updated.length ? `Aggiornate ${r.updated.length} date` : "Nessuna data da aggiornare"); onDone?.(); }
+    catch (e) { alert(e.data?.error || "Ricerca non riuscita"); }
+    setBusy(false);
+  };
+  return (
+    <div className="box">
+      <b>Date di uscita da TMDB</b>
+      <p className="hint">Cerca su TMDB la data di uscita completa dei titoli che non ce l'hanno (servono per gli anniversari). Non tocca le date già presenti.</p>
+      <button className="btn small" disabled={busy} onClick={run}>{busy ? "Cerco…" : "Forza ricerca date"}</button>
+      {res && (
+        <>
+          <p className="hint">Aggiornati: {res.updated.length}{res.failed.length ? ` · senza data su TMDB: ${res.failed.length}` : ""}{res.noTmdb.length ? ` · non collegati a TMDB: ${res.noTmdb.length}` : ""}.</p>
+          {res.remaining > 0 && <p className="hint">Ne restano {res.remaining}: premi di nuovo per continuare.</p>}
+          {res.failed.length > 0 && <p className="hint">Senza data: {res.failed.join(", ")}</p>}
+          {res.noTmdb.length > 0 && <p className="hint">Da collegare a TMDB a mano: {res.noTmdb.join(", ")}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- Anniversari ----------
 function Anniv({ say }) {
   const [busy, setBusy] = useState(false);
@@ -796,7 +823,7 @@ export default function Admin({ say, onChange }) {
         <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
       </div>
       {db && ["media", "timeline", "doom"].includes(tab) && <input className="in" placeholder={`Cerca tra ${db.media.length} progetti…`} value={q} onChange={(e) => setQ(e.target.value)} />}
-      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Runtimes media={db.media} say={say} onDone={reload} /><Stats /><Backup say={say} /><Anniv say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
+      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Runtimes media={db.media} say={say} onDone={reload} /><Stats /><Backup say={say} /><TmdbDates say={say} onDone={reload} /><Anniv say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
         <>
           <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
           {q.trim() && !shown.length && <p className="hint">Nessun progetto trovato.</p>}
