@@ -1,9 +1,10 @@
+import { BOT_USERNAME } from "./util.js";
 // Anniversari di uscita: cerca i titoli usciti "oggi" tanti anni fa e avvisa SOLO gli admin.
 // Usata sia dal cron giornaliero (netlify/functions/anniversari.js) sia dal bottone "Forza ricerca" del pannello admin.
 const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
 export async function runAnniversaries({ store, tg, admins, site = "", bot = "", force = false }) {
-  const handle = "@" + (String(bot || "").replace(/^@/, "") || "Marvel_Italia_StreamingBot");
+  const handle = "@" + (String(bot || "").replace(/^@/, "") || BOT_USERNAME);
   const day = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" }); // AAAA-MM-GG
   if (!force && (await store.get("anniv:last")) === day) return { day, found: [], skipped: true };
   const [yy, mm, dd] = day.split("-");

@@ -1,3 +1,6 @@
+// Username Telegram del bot (senza @). Se su Netlify c'è la variabile BOT_USERNAME, quella ha la precedenza.
+export const BOT_USERNAME = "Marvel_Italia_Streaming";
+
 // Estrae channelId e messageId da un link Telegram
 // Supporta: t.me/c/<id>/<msg>, t.me/c/<id>/<topic>/<msg>, t.me/<username>/<msg>
 export function parseLink(input = "") {
