@@ -154,7 +154,7 @@ async function recordSend(user, m) {
   await saveStats(st);
 }
 
-const getUser = async (id) => (await store().get(`user:${id}`, { type: "json" })) || { watchlist: [], watched: [], recent: [], ratings: {}, plays: {}, days: [] };
+const getUser = async (id) => (await store().get(`user:${id}`, { type: "json" })) || { watchlist: [], watched: [], recent: [], ratings: {}, plays: {}, days: [], settings: {} };
 
 const pub = (m) => ({
   ...m,
@@ -528,7 +528,7 @@ export default async (req) => {
   if (a === "me") {
     const sub = isAdmin ? { ok: true } : await isSubscribed(user.id);
     if (!isAdmin) await touch(user).catch(() => {});
-    return json({ user: { id: user.id, name: user.first_name }, isAdmin, botUsername: process.env.BOT_USERNAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
+    return json({ user: { id: user.id, name: user.first_name }, isAdmin, botUsername: process.env.BOT_USERNAME || "", appName: process.env.BOT_APP_NAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
   }
 
   // foto profilo più recente, letta da Telegram (data URL, perché <img> non può inviare l'header di autenticazione)
@@ -555,12 +555,22 @@ export default async (req) => {
       media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
       categories: db.categories.filter((x) => x.visible !== false),
       // novità con interruttore: "off" nascosta, "admin" solo admin (default; il Wrap parte nascosto), "all" tutti
-      features: Object.fromEntries(["timeline", "doom", "stats", "wrap"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" ? "off" : "admin"); return [k, v === "all" || (v === "admin" && isAdmin)]; })),
+      features: Object.fromEntries(["timeline", "doom", "stats", "wrap"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" ? "off" : "admin"); return [k, k === "stats" || k === "doom" || v === "all" || (v === "admin" && isAdmin)]; })), // statistiche e Doomsday sono sempre pubbliche
       timeline: db.timeline || [],
       timelineOut: db.timelineOut || [],
       doomsday: db.doomsday || { ids: [], minutes: {}, date: "2026-12-16" },
       user: await getUser(user.id),
     });
+  }
+
+  // impostazioni personali (es. modalità anti-spoiler)
+  if (a === "settings" && req.method === "POST") {
+    const { key, value } = await req.json();
+    if (!["antispoiler"].includes(key)) return json({ error: "bad request" }, 400);
+    const u = await getUser(user.id);
+    u.settings = { ...(u.settings || {}), [key]: !!value };
+    await store().setJSON(`user:${user.id}`, u);
+    return json(u);
   }
 
   if (a === "toggle" && req.method === "POST") {
