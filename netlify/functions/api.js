@@ -115,6 +115,17 @@ const getStats = async () => (await store().get("stats", { type: "json" })) || {
 const saveStats = (s) => store().setJSON("stats", s);
 const getInbox = async () => (await store().get("inbox", { type: "json" })) || { requests: [], reports: [] };
 const saveInbox = (i) => store().setJSON("inbox", i);
+// id dei titoli più guardati negli ultimi 7 giorni (solo visioni reali, admin esclusi), dal più visto
+const trendingIds = async () => {
+  const st = await getStats(), now = Date.now();
+  const days = Array.from({ length: 7 }, (_, i) => toDay(now - i * 864e5));
+  return Object.entries(st.media)
+    .map(([id, x]) => [id, days.reduce((n, d) => n + (x.w?.[d] || 0), 0)])
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([id]) => id);
+};
 const REASONS = { no_play: "Il video non parte", audio: "Audio o sottotitoli", quality: "Qualità scadente", wrong: "Contenuto sbagliato", other: "Altro" };
 
 const notifyAdmins = (text) =>
@@ -150,6 +161,9 @@ async function recordSend(user, m) {
   st.days[d] = { s: (st.days[d]?.s || 0) + 1 };
   const mm = st.media[m.id] || { t: m.title, s: 0 };
   mm.t = m.title; mm.s++; mm.l = now; st.media[m.id] = mm;
+  // visioni per giorno (ultimi 14 giorni) per la classifica "più visti degli ultimi 7 giorni"
+  mm.w = mm.w || {}; mm.w[d] = (mm.w[d] || 0) + 1;
+  Object.keys(mm.w).sort().slice(0, -14).forEach((k) => delete mm.w[k]);
   Object.keys(st.days).sort().slice(0, -90).forEach((k) => delete st.days[k]);
   await saveStats(st);
 }
@@ -528,7 +542,7 @@ export default async (req) => {
   if (a === "me") {
     const sub = isAdmin ? { ok: true } : await isSubscribed(user.id);
     if (!isAdmin) await touch(user).catch(() => {});
-    return json({ user: { id: user.id, name: user.first_name }, isAdmin, botUsername: process.env.BOT_USERNAME || BOT_USERNAME, appName: process.env.BOT_APP_NAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
+    return json({ user: { id: user.id, name: user.first_name }, isAdmin, botUsername: String(process.env.BOT_USERNAME || BOT_USERNAME).trim().replace(/^@/, ""), appName: process.env.BOT_APP_NAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
   }
 
   // foto profilo più recente, letta da Telegram (data URL, perché <img> non può inviare l'header di autenticazione)
@@ -559,6 +573,7 @@ export default async (req) => {
       timeline: db.timeline || [],
       timelineOut: db.timelineOut || [],
       doomsday: db.doomsday || { ids: [], minutes: {}, date: "2026-12-16" },
+      trending: await trendingIds().catch(() => []),
       user: await getUser(user.id),
     });
   }
