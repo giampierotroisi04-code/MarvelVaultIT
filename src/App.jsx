@@ -76,6 +76,22 @@ const Rail = ({ title, items, go, user }) =>
     </section>
   ) : null;
 
+// Classifica "più visti negli ultimi 7 giorni"
+const TopRail = ({ items, go, user }) =>
+  items.length >= 3 ? (
+    <section className="blk">
+      <div className="sec"><h2>Più visti questa settimana</h2></div>
+      <div className="rail">
+        {items.map((m, i) => (
+          <div className="rk" key={m.id}>
+            <i className="rk-n">{i + 1}</i>
+            <Card m={m} go={go} seen={user.watched.includes(m.id)} />
+          </div>
+        ))}
+      </div>
+    </section>
+  ) : null;
+
 function CatTiles({ cats, count, go }) {
   return (
     <div className="tiles">
@@ -860,6 +876,7 @@ export default function App() {
           )}
           <div className="page">
             <Continue recent={user.recent} watched={user.watched} media={media} watch={watch} go={go} />
+            <TopRail items={(boot.trending || []).map((id) => media.find((m) => m.id === id)).filter(Boolean).slice(0, 10)} go={go} user={user} />
             {roots.length > 0 && (
               <section className="blk">
                 <div className="sec"><h2>Categorie</h2></div>
