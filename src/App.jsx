@@ -184,12 +184,20 @@ function Stars({ value = 0, onRate }) {
   );
 }
 
-function Detail({ m, user, watch, toggle, say, rate, initSeason }) {
+function Detail({ m, user, me, watch, toggle, say, rate, initSeason }) {
   const seasons = [...(m.seasons || [])].sort(byNum);
   const [sid, setSid] = useState(seasons.some((x) => x.id === initSeason) ? initSeason : seasons[0]?.id);
   const [rep, setRep] = useState(false);
   const season = seasons.find((s) => s.id === sid);
   const seen = (id) => user.watched.includes(id);
+  const [shown, setShown] = useState({}); // episodi con spoiler sbloccati a mano
+  const spoil = (e) => !!user.settings?.antispoiler && m.type === "series" && !seen(e.id) && !shown[e.id];
+  const share = () => {
+    const link = me?.botUsername ? `https://t.me/${me.botUsername}${me.appName ? "/" + me.appName : ""}?startapp=t_${m.id}` : "";
+    if (!link) return say("Link non disponibile");
+    const u = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(`Guarda ${m.title} su Marvel Italia Streaming`)}`;
+    tg?.openTelegramLink ? tg.openTelegramLink(u) : window.open(u, "_blank");
+  };
   const bg = art(m, "backdrop") || art(m, "poster");
   const inList = user.watchlist.includes(m.id);
   return (
@@ -206,6 +214,7 @@ function Detail({ m, user, watch, toggle, say, rate, initSeason }) {
         <div className="actions">
           {m.type === "movie" && m.hasVideo && <button className="btn primary" onClick={() => watch(m.id)}><I.Play size={18} /> Guarda</button>}
           <button className="btn round" aria-label="Lista" onClick={() => toggle("watchlist", m.id)}><I.Bookmark size={20} fill={inList ? "currentColor" : "none"} /></button>
+          <button className="btn round" aria-label="Condividi" onClick={share}><I.Share size={20} /></button>
           {m.type === "movie" && <button className="btn round" aria-label="Visto" onClick={() => toggle("watched", m.id)}>{seen(m.id) ? <I.Check size={20} /> : <I.Eye size={20} />}</button>}
         </div>
         <div className="rating">
@@ -223,14 +232,16 @@ function Detail({ m, user, watch, toggle, say, rate, initSeason }) {
             </div>
             {season && [...season.episodes].sort(byNum).map((e) => (
               <div className="ep" key={e.id}>
-                <div className="thumb" onClick={() => e.hasVideo && watch(m.id, e.id)}>
+                <div className={"thumb" + (spoil(e) ? " spoil" : "")} onClick={() => e.hasVideo && watch(m.id, e.id)}>
                   {e.cover || e.coverUrl ? <img src={imgUrl(e.cover) || e.coverUrl} alt="" loading="lazy" /> : <div className="ph"><I.Film size={22} /></div>}
                   {e.hasVideo && <span className="pl"><I.Play size={16} /></span>}
                   {seen(e.id) && <span className="seen"><I.Check size={12} /></span>}
                 </div>
                 <div className="ep-info">
                   <b>{e.number}. {e.title || `Episodio ${e.number}`}</b>
-                  {e.overview && <Clamp text={e.overview} lines={2} />}
+                  {spoil(e)
+                    ? <button className="spoil-btn" onClick={() => setShown((x) => ({ ...x, [e.id]: true }))}><I.Eye size={14} /> Spoiler nascosto · tocca per mostrare</button>
+                    : e.overview && <Clamp text={e.overview} lines={2} />}
                   <button className="lnk" onClick={() => toggle("watched", e.id)}>{seen(e.id) ? "Visto" : "Segna come visto"}</button>
                 </div>
               </div>
@@ -245,7 +256,7 @@ function Detail({ m, user, watch, toggle, say, rate, initSeason }) {
 }
 
 // ---------- PROFILO ----------
-function ProfilePage({ media, user, me, features = {}, go, say }) {
+function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
   const [wrap, setWrap] = useState(false);
   const [rep, setRep] = useState(false);
   const [req, setReq] = useState(false);
@@ -261,8 +272,9 @@ function ProfilePage({ media, user, me, features = {}, go, say }) {
   const photo = !imgErr ? pic || tu.photo_url || "" : "";
   const list = media.filter((m) => user.watchlist.includes(m.id));
   const seenN = media.filter((m) => user.watched.includes(m.id)).length;
-  const tabs = [["list", I.Bookmark, "Lista"], ["stats", I.Chart, "Statistiche"], ["help", I.Flag, "Assistenza"]];
+  const tabs = [["list", I.Bookmark, "Lista"], ["stats", I.Chart, "Statistiche"], ["settings", I.Sliders, "Impostazioni"], ["help", I.Flag, "Assistenza"]];
   const idx = Math.max(0, tabs.findIndex((t) => t[0] === tab));
+  const anti = !!user.settings?.antispoiler;
   return (
     <div className="page prof">
       <div className="prof-card">
@@ -275,7 +287,7 @@ function ProfilePage({ media, user, me, features = {}, go, say }) {
         </div>
       </div>
 
-      <div className="seg" role="tablist">
+      <div className="seg" role="tablist" style={{ "--n": tabs.length }}>
         <span className="seg-ind" style={{ transform: `translateX(${idx * 100}%)` }} />
         {tabs.map(([k, Ic, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); tg?.HapticFeedback?.selectionChanged?.(); }}>
@@ -290,6 +302,15 @@ function ProfilePage({ media, user, me, features = {}, go, say }) {
           : <div className="prof-empty"><I.Bookmark size={28} /><b>La tua lista è vuota</b><p>Salva film e serie con il segnalibro per ritrovarli qui.</p></div>)}
 
         {tab === "stats" && <StatsView media={media} user={user} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />}
+
+        {tab === "settings" && (
+          <div className="prof-help">
+            <button className="set-row" role="switch" aria-checked={anti} onClick={() => { setSetting("antispoiler", !anti); tg?.HapticFeedback?.selectionChanged?.(); }}>
+              <span className="help-tx"><b>Modalità anti-spoiler</b><small>Nelle serie nasconde le descrizioni degli episodi che non hai ancora visto. Le copertine restano sfocate finché non le sblocchi.</small></span>
+              <span className={"sw" + (anti ? " on" : "")}><i /></span>
+            </button>
+          </div>
+        )}
 
         {tab === "help" && (
           <div className="prof-help">
@@ -768,6 +789,19 @@ export default function App() {
       tg?.HapticFeedback?.impactOccurred("light");
     } catch { say("Salvataggio non riuscito"); }
   };
+  const setSetting = async (key, value) => {
+    setBoot((b) => ({ ...b, user: { ...b.user, settings: { ...(b.user.settings || {}), [key]: value } } }));
+    try { const u = await api("settings", { body: { key, value } }); setBoot((b) => ({ ...b, user: u })); }
+    catch { setBoot((b) => ({ ...b, user: { ...b.user, settings: { ...(b.user.settings || {}), [key]: !value } } })); say("Impostazione non salvata"); }
+  };
+  const deep = useRef(false);
+  useEffect(() => { // link condiviso: t.me/bot?startapp=t_<id> apre direttamente la scheda
+    if (deep.current || !boot.media) return;
+    deep.current = true;
+    const sp = tg?.initDataUnsafe?.start_param || "";
+    if (sp.startsWith("t_") && boot.media.some((x) => x.id === sp.slice(2))) go({ n: "media", id: sp.slice(2) });
+  }, [boot.media]);
+
   const toggle = async (k, id) => {
     const u = await api("toggle", { body: { kind: k, id } });
     setBoot((b) => ({ ...b, user: u }));
@@ -839,7 +873,7 @@ export default function App() {
           </div>
         </div>
       );
-    } else if (view.n === "media" && find(view.id)) body = <Detail key={view.id + (view.season || "")} m={find(view.id)} user={user} watch={watch} toggle={toggle} say={say} rate={rate} initSeason={view.season} />;
+    } else if (view.n === "media" && find(view.id)) body = <Detail key={view.id + (view.season || "")} m={find(view.id)} user={user} me={me} watch={watch} toggle={toggle} say={say} rate={rate} initSeason={view.season} />;
     else if (view.n === "coll") body = <div className="page"><h1 className="ptitle">{view.title}</h1><Grid items={media.filter((m) => view.ids.includes(m.id)).sort(byRelease("asc"))} go={go} user={user} /></div>;
     else if (view.n === "cat") {
       const c = categories.find((x) => x.id === view.id);
@@ -861,7 +895,7 @@ export default function App() {
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
     else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} />;
     else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} toggle={toggle} setSeen={setSeen} />;
-    else if (view.n === "profile" || view.n === "list" || view.n === "stats") body = <ProfilePage media={media} user={user} me={me} features={features} go={go} say={say} />;
+    else if (view.n === "profile" || view.n === "list" || view.n === "stats") body = <ProfilePage media={media} user={user} me={me} features={features} go={go} say={say} setSetting={setSetting} />;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 

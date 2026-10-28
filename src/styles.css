@@ -366,8 +366,8 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .prof-nums{display:flex;gap:14px;font-size:12.5px;color:var(--tx2)}
 .prof-nums b{color:#fff;font-size:15px;margin-right:3px}
 .seg{position:relative;display:flex;background:var(--s1);border:1px solid var(--bd);border-radius:16px;padding:4px;margin-bottom:16px}
-.seg-ind{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px) / 3);border-radius:12px;background:linear-gradient(135deg,#f0262c,var(--red) 60%,#c9121a);box-shadow:0 4px 14px rgba(227,22,28,.4);transition:transform .28s cubic-bezier(.3,.8,.3,1)}
-.seg button{position:relative;z-index:1;flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:none;border:0;color:var(--tx2);font-weight:700;font-size:13px;padding:10px 4px;transition:color .2s}
+.seg-ind{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px) / var(--n,3));border-radius:12px;background:linear-gradient(135deg,#f0262c,var(--red) 60%,#c9121a);box-shadow:0 4px 14px rgba(227,22,28,.4);transition:transform .28s cubic-bezier(.3,.8,.3,1)}
+.seg button{position:relative;z-index:1;flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:none;border:0;color:var(--tx2);font-weight:700;font-size:12.5px;padding:10px 2px;transition:color .2s}
 .seg button.on{color:#fff}
 .prof-pane{animation:paneIn .28s ease both}
 @keyframes paneIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -390,3 +390,17 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .chips{margin-left:calc(var(--px) * -1);margin-right:calc(var(--px) * -1);padding-left:var(--px);padding-right:var(--px)}
 /* lo scroll-snap allinea la prima card al bordo sinistro ignorando il padding: serve scroll-padding */
 .rail,.chips{scroll-padding-left:var(--px);scroll-padding-inline-start:var(--px)}
+
+/* ---------- impostazioni, anti-spoiler ---------- */
+.set-h{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx2);font-weight:800;margin:10px 2px 0}
+.set-h:first-child{margin-top:0}
+.set-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--s1);border:1px solid var(--bd);border-radius:16px;padding:14px;color:var(--tx)}
+.sw{flex:none;width:48px;height:28px;border-radius:99px;background:var(--s2);border:1px solid var(--bd);position:relative;transition:background .2s,border-color .2s}
+.sw i{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .2s}
+.sw.on{background:var(--red);border-color:var(--red)}.sw.on i{transform:translateX(20px)}
+.thumb.spoil img,.thumb.spoil .ph{filter:blur(14px) brightness(.7);transform:scale(1.15)}
+.spoil-btn{display:inline-flex;align-items:center;gap:6px;background:var(--s2);border:1px dashed var(--bd);border-radius:10px;color:var(--tx2);font-size:12px;padding:7px 10px;text-align:left}
+.seg{--n:3}
+
+/* 4 schede nel profilo: icona sopra, testo sotto */
+.seg button{flex-direction:column;gap:3px;font-size:11.5px;padding:8px 2px}
