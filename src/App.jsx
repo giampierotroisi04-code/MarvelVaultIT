@@ -250,40 +250,62 @@ function ProfilePage({ media, user, me, features = {}, go, say }) {
   const [rep, setRep] = useState(false);
   const [req, setReq] = useState(false);
   const [imgErr, setImgErr] = useState(false);
+  const [tab, setTabRaw] = useState(() => { try { return sessionStorage.getItem("prof_tab") || "list"; } catch { return "list"; } });
+  const setTab = (t) => { setTabRaw(t); try { sessionStorage.setItem("prof_tab", t); } catch {} };
   const tu = tg?.initDataUnsafe?.user || {};
   const username = tu.username || "";
   const full = [tu.first_name || me?.user?.name, tu.last_name].filter(Boolean).join(" ");
   const name = username ? "@" + username : full || "Utente";
-  const photo = tu.photo_url && !imgErr ? tu.photo_url : "";
+  const [pic, setPic] = useState("");
+  useEffect(() => { api("avatar").then((r) => setPic(r.photo || "")).catch(() => {}); }, []);
+  const photo = !imgErr ? pic || tu.photo_url || "" : "";
   const list = media.filter((m) => user.watchlist.includes(m.id));
+  const seenN = media.filter((m) => user.watched.includes(m.id)).length;
+  const tabs = [["list", I.Bookmark, "Lista"], ["stats", I.Chart, "Statistiche"], ["help", I.Flag, "Assistenza"]];
+  const idx = Math.max(0, tabs.findIndex((t) => t[0] === tab));
   return (
     <div className="page prof">
-      <div className="prof-head">
+      <div className="prof-card">
         {photo
           ? <img className="avatar" src={photo} alt="" onError={() => setImgErr(true)} />
           : <span className="avatar ph">{name.replace("@", "").charAt(0).toUpperCase()}</span>}
-        <h1 className="ptitle">{name}</h1>
+        <div className="prof-id">
+          <h1 className="ptitle">{name}</h1>
+          <div className="prof-nums"><span><b>{list.length}</b> in lista</span><span><b>{seenN}</b> visti</span></div>
+        </div>
       </div>
 
-      <section className="prof-sec">
-        <div className="sec"><h2>La mia lista</h2></div>
-        {list.length ? <Grid items={list} go={go} user={user} /> : <p className="hint">Nessun titolo in lista. Salva film e serie con il segnalibro.</p>}
-      </section>
+      <div className="seg" role="tablist">
+        <span className="seg-ind" style={{ transform: `translateX(${idx * 100}%)` }} />
+        {tabs.map(([k, Ic, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); tg?.HapticFeedback?.selectionChanged?.(); }}>
+            <Ic size={16} /> <span>{label}</span>
+          </button>
+        ))}
+      </div>
 
-      {features.stats && (
-        <section className="prof-sec">
-          <div className="sec"><h2>Le mie statistiche</h2></div>
-          <StatsView media={media} user={user} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />
-        </section>
-      )}
+      <div className="prof-pane" key={tab}>
+        {tab === "list" && (list.length
+          ? <Grid items={list} go={go} user={user} />
+          : <div className="prof-empty"><I.Bookmark size={28} /><b>La tua lista è vuota</b><p>Salva film e serie con il segnalibro per ritrovarli qui.</p></div>)}
 
-      <section className="prof-sec">
-        <div className="sec"><h2>Assistenza</h2></div>
-        <div className="prof-act">
-          <button className="btn" onClick={() => setRep(true)}><I.Flag size={16} /> Segnala un problema</button>
-          <button className="btn" onClick={() => setReq(true)}><I.Send size={16} /> Richiedi un progetto</button>
-        </div>
-      </section>
+        {tab === "stats" && <StatsView media={media} user={user} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />}
+
+        {tab === "help" && (
+          <div className="prof-help">
+            <button className="help-card" onClick={() => setRep(true)}>
+              <span className="help-ic"><I.Flag size={20} /></span>
+              <span className="help-tx"><b>Segnala un problema</b><small>Video che non parte, episodio sbagliato, descrizione errata…</small></span>
+              <span className="help-go">›</span>
+            </button>
+            <button className="help-card" onClick={() => setReq(true)}>
+              <span className="help-ic"><I.Send size={20} /></span>
+              <span className="help-tx"><b>Richiedi un progetto</b><small>Manca un film o una serie? Chiedilo qui.</small></span>
+              <span className="help-go">›</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       <TmdbCredit />
       {wrap && features.wrap && <WrapView media={media} user={user} me={me} onClose={() => setWrap(false)} />}
