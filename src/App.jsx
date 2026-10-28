@@ -92,9 +92,9 @@ const TopRail = ({ items, go, user }) =>
     </section>
   ) : null;
 
-function CatTiles({ cats, count, go }) {
+function CatTiles({ cats, count, go, home }) {
   return (
-    <div className="tiles">
+    <div className={home ? "tiles home" : "tiles"}>
       {cats.map((c) => {
         const n = count(c.id);
         return (
@@ -880,7 +880,7 @@ export default function App() {
             {roots.length > 0 && (
               <section className="blk">
                 <div className="sec"><h2>Categorie</h2></div>
-                <CatTiles cats={roots} count={(id) => inCat(id).length} go={go} />
+                <CatTiles home cats={roots} count={(id) => inCat(id).length} go={go} />
               </section>
             )}
             <Rail title="Ultime uscite" items={recent.slice(0, 12)} go={go} user={user} />
