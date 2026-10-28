@@ -388,3 +388,5 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .rail{margin-left:calc(var(--px) * -1);margin-right:calc(var(--px) * -1);padding-left:var(--px);padding-right:var(--px)}
 .rail::after{content:"";flex:0 0 calc(var(--px) - 12px)} /* il padding destro di una lista scorrevole viene ignorato: serve uno spazio finale */
 .chips{margin-left:calc(var(--px) * -1);margin-right:calc(var(--px) * -1);padding-left:var(--px);padding-right:var(--px)}
+/* lo scroll-snap allinea la prima card al bordo sinistro ignorando il padding: serve scroll-padding */
+.rail,.chips{scroll-padding-left:var(--px);scroll-padding-inline-start:var(--px)}
