@@ -1,6 +1,6 @@
 import { getStore } from "@netlify/blobs";
 import crypto from "node:crypto";
-import { parseLink, buildLink } from "../../src/lib/util.js";
+import { parseLink, buildLink, BOT_USERNAME } from "../../src/lib/util.js";
 import { runAnniversaries } from "../../src/lib/anniv.js";
 
 export const config = { path: "/api/*" };
@@ -528,7 +528,7 @@ export default async (req) => {
   if (a === "me") {
     const sub = isAdmin ? { ok: true } : await isSubscribed(user.id);
     if (!isAdmin) await touch(user).catch(() => {});
-    return json({ user: { id: user.id, name: user.first_name }, isAdmin, botUsername: process.env.BOT_USERNAME || "", appName: process.env.BOT_APP_NAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
+    return json({ user: { id: user.id, name: user.first_name }, isAdmin, botUsername: process.env.BOT_USERNAME || BOT_USERNAME, appName: process.env.BOT_APP_NAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
   }
 
   // foto profilo più recente, letta da Telegram (data URL, perché <img> non può inviare l'header di autenticazione)
@@ -1028,7 +1028,7 @@ export default async (req) => {
 
     // forza la ricerca degli anniversari di oggi (ignora il "già inviato oggi") e manda il risultato agli admin
     if (b === "anniv" && req.method === "POST") {
-      const r = await runAnniversaries({ store: store(), tg, admins: admins(), site: SITE, bot: process.env.BOT_USERNAME || "", force: true });
+      const r = await runAnniversaries({ store: store(), tg, admins: admins(), site: SITE, bot: process.env.BOT_USERNAME || BOT_USERNAME, force: true });
       return json({ ok: true, day: r.day, found: r.found });
     }
 
