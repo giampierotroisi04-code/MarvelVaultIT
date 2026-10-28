@@ -338,3 +338,21 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .prof-sec{margin-top:22px}
 .prof-act{display:flex;flex-direction:column;gap:10px}
 .prof-act .btn{justify-content:center}
+
+
+/* ---------- rettangoli rossi: più moderni, stondati e meno pesanti ---------- */
+.sec h2,.ptitle,.sheet-h b{background:linear-gradient(135deg,#f0262c,var(--red) 60%,#c9121a);border-radius:12px;padding:4px 14px 3px;box-shadow:0 4px 16px rgba(227,22,28,.32)}
+.sec h2{font-size:20px}
+.ptitle{font-size:27px;line-height:1.1}
+.sheet-h b{font-size:21px;padding:3px 12px 2px;border-radius:10px}
+.tl b{background:linear-gradient(135deg,#f0262c,var(--red));border-radius:8px;padding:2px 10px 1px;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+.page>h2,h2.sub{border-left:0;padding-left:0}
+.badge,.pill.acc{box-shadow:0 2px 10px rgba(227,22,28,.3)}
+.item{border-left-width:3px;border-radius:16px}
+.stat{border-left-width:3px;border-radius:16px}
+.toast{border-left-width:4px;border-radius:14px}
+/* ---------- copertine episodi: sempre 16:9, riempiono tutto il riquadro, niente spazi neri ---------- */
+.ep{align-items:flex-start}
+.thumb{align-self:flex-start;aspect-ratio:16/9;background:var(--s2)}
+.thumb img,.thumb .ph{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;object-fit:cover;object-position:center}
+.thumb .ph{display:flex;align-items:center;justify-content:center;color:var(--tx2)}
