@@ -115,6 +115,56 @@ const getStats = async () => (await store().get("stats", { type: "json" })) || {
 const saveStats = (s) => store().setJSON("stats", s);
 const getInbox = async () => (await store().get("inbox", { type: "json" })) || { requests: [], reports: [] };
 const saveInbox = (i) => store().setJSON("inbox", i);
+const getFeed = async () => (await store().get("feed", { type: "json" })) || {};
+// quanti contenuti guardabili ha un titolo adesso (0 se nascosto)
+const playable = (m) => (m.visible === false ? 0 : m.type === "series"
+  ? (m.seasons || []).reduce((n, s) => n + (s.episodes || []).filter((e) => e.visible !== false && e.source).length, 0)
+  : (m.source ? 1 : 0));
+
+// Notifiche in-app (nessun messaggio privato): calcolate quando l'utente apre l'app.
+// 1) nuovi titoli, 2) titoli in lista che sono arrivati o hanno nuovi episodi, 3) richieste/segnalazioni risolte.
+async function syncNotifs(userId, db) {
+  const u = await getUser(userId), now = Date.now();
+  const [inbox, feed] = await Promise.all([getInbox(), getFeed()]);
+  let dirty = false, feedDirty = false;
+  const first = !u.ninit; // primo avvio: si fissa la situazione attuale senza generare notifiche
+  const add = (n) => { u.notifs = [{ id: uid(), at: now, ...n }, ...(u.notifs || [])]; dirty = true; };
+
+  const vis = db.media.filter((m) => m.visible !== false);
+  if (!feed.shown) { feed.shown = Object.fromEntries(vis.map((m) => [m.id, 0])); feedDirty = true; }
+  else for (const m of vis) if (!(m.id in feed.shown)) { feed.shown[m.id] = now; feedDirty = true; }
+  if (first) u.nlast = now;
+  else {
+    const fresh = vis.filter((m) => (feed.shown[m.id] || 0) > (u.nlast || 0));
+    if (fresh.length) { add({ type: "new", ids: fresh.slice(0, 8).map((m) => m.id), n: fresh.length }); u.nlast = now; }
+  }
+
+  u.nbase = u.nbase || {};
+  for (const id of u.watchlist || []) {
+    const m = db.media.find((x) => x.id === id);
+    if (!m) continue;
+    const cur = playable(m);
+    if (!(id in u.nbase)) { u.nbase[id] = cur; dirty = true; continue; }
+    if (cur > u.nbase[id]) add({ type: "arrived", mediaId: id, n: cur - u.nbase[id], fresh: u.nbase[id] === 0 });
+    if (cur !== u.nbase[id]) { u.nbase[id] = cur; dirty = true; }
+  }
+
+  u.ndone = u.ndone || [];
+  const mine = [...inbox.requests.map((r) => ({ ...r, k: "request" })), ...inbox.reports.map((r) => ({ ...r, k: "report" }))].filter((r) => r.userId === userId && r.status === "done");
+  for (const r of mine) {
+    if (u.ndone.includes(r.id)) continue;
+    u.ndone.push(r.id); dirty = true;
+    if (!first) add(r.k === "request" ? { type: "request", text: r.text } : { type: "report", title: r.title, episodeLabel: r.episodeLabel || "" });
+  }
+  u.ndone = u.ndone.slice(-300);
+
+  if (first) { u.ninit = true; dirty = true; }
+  const keep = (u.notifs || []).filter((n) => n.at > now - 30 * 864e5).slice(0, 40);
+  if (keep.length !== (u.notifs || []).length) { u.notifs = keep; dirty = true; }
+  if (feedDirty) await store().setJSON("feed", feed).catch(() => {});
+  if (dirty) await store().setJSON(`user:${userId}`, u).catch(() => {});
+  return u;
+}
 // id dei titoli più guardati negli ultimi 7 giorni (solo visioni reali, admin esclusi), dal più visto
 const trendingIds = async () => {
   const st = await getStats(), now = Date.now();
@@ -574,18 +624,52 @@ export default async (req) => {
       timelineOut: db.timelineOut || [],
       doomsday: db.doomsday || { ids: [], minutes: {}, date: "2026-12-16" },
       trending: await trendingIds().catch(() => []),
-      user: await getUser(user.id),
+      user: await syncNotifs(user.id, db),
     });
   }
 
   // impostazioni personali (es. modalità anti-spoiler)
   if (a === "settings" && req.method === "POST") {
     const { key, value } = await req.json();
-    if (!["antispoiler"].includes(key)) return json({ error: "bad request" }, 400);
+    let val;
+    if (key === "antispoiler") val = !!value;
+    else if (key === "haptics") val = !!value;
+    else if (key === "spoilerHide" && ["cover", "desc", "both"].includes(value)) val = value;
+    else return json({ error: "bad request" }, 400);
     const u = await getUser(user.id);
-    u.settings = { ...(u.settings || {}), [key]: !!value };
+    u.settings = { ...(u.settings || {}), [key]: val };
     await store().setJSON(`user:${user.id}`, u);
     return json(u);
+  }
+
+  // episodi con spoiler sbloccati a mano: restano sbloccati
+  if (a === "unlock" && req.method === "POST") {
+    const { id } = await req.json();
+    if (!id || String(id).length > 64) return json({ error: "bad request" }, 400);
+    const u = await getUser(user.id);
+    u.unlocked = [...new Set([...(u.unlocked || []), String(id)])].slice(-1500);
+    await store().setJSON(`user:${user.id}`, u);
+    return json({ ok: true });
+  }
+
+  // le mie richieste e segnalazioni, con lo stato
+  if (a === "mine" && req.method === "GET") {
+    const inbox = await getInbox();
+    return json({
+      requests: inbox.requests.filter((r) => r.userId === user.id).map((r) => ({ id: r.id, text: r.text, status: r.status, createdAt: r.createdAt })),
+      reports: inbox.reports.filter((r) => r.userId === user.id).map((r) => ({ id: r.id, title: r.title, episodeLabel: r.episodeLabel, reason: r.reason, status: r.status, createdAt: r.createdAt })),
+    });
+  }
+
+  // campanellino: segna come lette / svuota
+  if (a === "notifs" && req.method === "POST") {
+    const { action } = await req.json();
+    if (!["read", "clear"].includes(action)) return json({ error: "bad request" }, 400);
+    const u = await getUser(user.id);
+    u.nread = Date.now();
+    if (action === "clear") u.notifs = [];
+    await store().setJSON(`user:${user.id}`, u);
+    return json({ ok: true });
   }
 
   if (a === "toggle" && req.method === "POST") {
@@ -595,6 +679,11 @@ export default async (req) => {
     const set = new Set(u[kind]);
     set.has(id) ? set.delete(id) : set.add(id);
     u[kind] = [...set];
+    if (kind === "watchlist") { // fotografia di cosa è già guardabile: serve per avvisarti quando arriva qualcosa di nuovo
+      u.nbase = u.nbase || {};
+      if (set.has(id)) { const m = (await getDb()).media.find((x) => x.id === id); u.nbase[id] = m ? playable(m) : 0; }
+      else delete u.nbase[id];
+    }
     await store().setJSON(`user:${user.id}`, u);
     return json(u);
   }
