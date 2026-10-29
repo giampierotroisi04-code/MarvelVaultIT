@@ -8,6 +8,14 @@ import { StatsView, WrapView } from "./Stats.jsx";
 import logo from "./logo.jpg";
 
 const tg = window.Telegram?.WebApp;
+
+// vibrazione: rispetta l'impostazione dell'utente (si aggiorna in App)
+let hapticOn = true;
+const haptic = {
+  impactOccurred: (s) => { if (hapticOn) tg?.HapticFeedback?.impactOccurred?.(s); },
+  selectionChanged: () => { if (hapticOn) tg?.HapticFeedback?.selectionChanged?.(); },
+  notificationOccurred: (t) => { if (hapticOn) tg?.HapticFeedback?.notificationOccurred?.(t); },
+};
 const catSort = (c) => { const o = c?.mediaOrder || []; const rel = byRelease("asc"); return (a, b) => { const x = o.indexOf(a.id), y = o.indexOf(b.id); return x >= 0 && y >= 0 ? x - y : x >= 0 ? -1 : y >= 0 ? 1 : rel(a, b); }; };
 const byNum = (a, b) => (a.number || 0) - (b.number || 0);
 const kind = (m) => (m.type === "movie" ? "Film" : "Serie TV");
@@ -111,13 +119,57 @@ function CatTiles({ cats, count, go, home }) {
   );
 }
 
-const Header = ({ onSearch }) => (
+const Header = ({ onSearch, onBell, unread = 0 }) => (
   <header className="top">
     <img src={logo} alt="" />
     <div className="brand"><b>Marvel Italia</b><small>STREAMING</small></div>
+    <button className="ico bell" onClick={onBell} aria-label="Notifiche"><I.Bell size={20} />{unread > 0 && <span className="dot">{unread > 9 ? "9+" : unread}</span>}</button>
     <button className="ico" onClick={onSearch} aria-label="Cerca"><I.Search size={20} /></button>
   </header>
 );
+
+const ago = (t) => {
+  const s = (Date.now() - t) / 1000;
+  if (s < 60) return "ora";
+  if (s < 3600) return `${Math.floor(s / 60)} min fa`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h fa`;
+  const d = Math.floor(s / 86400);
+  return d === 1 ? "ieri" : `${d} giorni fa`;
+};
+
+// Campanellino: nuovi titoli, titoli in lista arrivati, richieste e segnalazioni risolte
+function NotifSheet({ notifs, media, readAt, onOpen, onClear, onClose }) {
+  const find = (id) => media.find((m) => m.id === id);
+  const rows = notifs.map((n) => {
+    if (n.type === "arrived") {
+      const m = find(n.mediaId);
+      if (!m) return null;
+      const title = m.type === "series" ? (n.fresh ? `${m.title} è arrivata` : n.n === 1 ? `Nuovo episodio di ${m.title}` : `${n.n} nuovi episodi di ${m.title}`) : `${m.title} è disponibile`;
+      return { n, Ic: I.Bookmark, title, sub: "Dalla tua lista", to: { n: "media", id: m.id } };
+    }
+    if (n.type === "new") {
+      const ms = (n.ids || []).map(find).filter(Boolean);
+      if (!ms.length) return null;
+      return { n, Ic: I.Plus, title: n.n === 1 ? `Nuovo titolo: ${ms[0].title}` : `${n.n} nuovi titoli`, sub: ms.slice(0, 3).map((x) => x.title).join(", ") + (n.n > 3 ? "…" : ""), to: ms.length === 1 ? { n: "media", id: ms[0].id } : null };
+    }
+    if (n.type === "request") return { n, Ic: I.Send, title: "Richiesta completata", sub: `“${n.text}” è stata aggiunta`, to: { n: "profile", help: true } };
+    if (n.type === "report") return { n, Ic: I.Flag, title: "Segnalazione risolta", sub: `${n.title}${n.episodeLabel ? " · " + n.episodeLabel : ""}`, to: { n: "profile", help: true } };
+    return null;
+  }).filter(Boolean);
+  return (
+    <Sheet title="Notifiche" onClose={onClose}>
+      {!rows.length && <p className="hint">Nessuna notifica per ora.</p>}
+      {rows.map(({ n, Ic, title, sub, to }) => (
+        <button key={n.id} className={"nrow" + (n.at > readAt ? " unread" : "")} disabled={!to} onClick={() => to && onOpen(to)}>
+          <span className="help-ic"><Ic size={18} /></span>
+          <span className="help-tx"><b>{title}</b><small>{sub}</small></span>
+          <span className="when">{ago(n.at)}</span>
+        </button>
+      ))}
+      {rows.length > 0 && <button className="btn" onClick={onClear}><I.Trash size={16} /> Svuota notifiche</button>}
+    </Sheet>
+  );
+}
 
 function Sheet({ title, onClose, children }) {
   return (
@@ -147,6 +199,16 @@ function RequestSheet({ initial, onClose, say }) {
     </Sheet>
   );
 }
+
+// cosa nascondere negli episodi non visti: solo copertina, solo descrizione, o entrambe
+const HIDES = [
+  ["cover", "Copertina", "Sfoca solo la copertina dell'episodio."],
+  ["desc", "Descrizione", "Nasconde solo la descrizione."],
+  ["both", "Entrambe", "Sfoca la copertina e nasconde la descrizione."],
+];
+const spoilerHide = (user) => user.settings?.spoilerHide || "both";
+// un episodio è nascosto solo se: modalità attiva, serie, episodio non visto (né la serie), non sbloccato a mano
+const isLocked = (user, m, e) => !!user.settings?.antispoiler && m.type === "series" && !user.watched.includes(e.id) && !user.watched.includes(m.id) && !(user.unlocked || []).includes(e.id);
 
 const REASONS = [["no_play", "Il video non parte"], ["audio", "Audio o sottotitoli"], ["quality", "Qualità scadente"], ["wrong", "Contenuto sbagliato"], ["other", "Altro"]];
 
@@ -200,14 +262,14 @@ function Stars({ value = 0, onRate }) {
   );
 }
 
-function Detail({ m, user, me, watch, toggle, say, rate, initSeason }) {
+function Detail({ m, user, me, watch, toggle, say, rate, unlock, initSeason }) {
   const seasons = [...(m.seasons || [])].sort(byNum);
   const [sid, setSid] = useState(seasons.some((x) => x.id === initSeason) ? initSeason : seasons[0]?.id);
   const [rep, setRep] = useState(false);
   const season = seasons.find((s) => s.id === sid);
   const seen = (id) => user.watched.includes(id);
-  const [shown, setShown] = useState({}); // episodi con spoiler sbloccati a mano
-  const spoil = (e) => !!user.settings?.antispoiler && m.type === "series" && !seen(e.id) && !shown[e.id];
+  const hide = spoilerHide(user);
+  const spoil = (e) => isLocked(user, m, e);
   const share = () => {
     const link = me?.botUsername ? `https://t.me/${me.botUsername}${me.appName ? "/" + me.appName : ""}?startapp=t_${m.id}` : "";
     if (!link) return say("Link non disponibile");
@@ -248,16 +310,15 @@ function Detail({ m, user, me, watch, toggle, say, rate, initSeason }) {
             </div>
             {season && [...season.episodes].sort(byNum).map((e) => (
               <div className="ep" key={e.id}>
-                <div className={"thumb" + (spoil(e) ? " spoil" : "")} onClick={() => e.hasVideo && watch(m.id, e.id)}>
+                <div className={"thumb" + (spoil(e) && hide !== "desc" ? " spoil" : "")} onClick={() => e.hasVideo && watch(m.id, e.id)}>
                   {e.cover || e.coverUrl ? <img src={imgUrl(e.cover) || e.coverUrl} alt="" loading="lazy" /> : <div className="ph"><I.Film size={22} /></div>}
                   {e.hasVideo && <span className="pl"><I.Play size={16} /></span>}
                   {seen(e.id) && <span className="seen"><I.Check size={12} /></span>}
                 </div>
                 <div className="ep-info">
                   <b>{e.number}. {e.title || `Episodio ${e.number}`}</b>
-                  {spoil(e)
-                    ? <button className="spoil-btn" onClick={() => setShown((x) => ({ ...x, [e.id]: true }))}><I.Eye size={14} /> Spoiler nascosto · tocca per mostrare</button>
-                    : e.overview && <Clamp text={e.overview} lines={2} />}
+                  {spoil(e) && <button className="spoil-btn" onClick={() => unlock(e.id)}><I.Eye size={14} /> {hide === "cover" ? "Copertina nascosta" : hide === "desc" ? "Descrizione nascosta" : "Spoiler nascosto"} · tocca per mostrare</button>}
+                  {e.overview && !(spoil(e) && hide !== "cover") && <Clamp text={e.overview} lines={2} />}
                   <button className="lnk" onClick={() => toggle("watched", e.id)}>{seen(e.id) ? "Visto" : "Segna come visto"}</button>
                 </div>
               </div>
@@ -271,11 +332,38 @@ function Detail({ m, user, me, watch, toggle, say, rate, initSeason }) {
   );
 }
 
+// Elenco delle mie richieste e segnalazioni, con lo stato
+function MyRequests({ tick }) {
+  const [d, setD] = useState(null);
+  useEffect(() => { api("mine").then(setD).catch(() => setD({ requests: [], reports: [], err: true })); }, [tick]);
+  if (!d) return null;
+  const why = Object.fromEntries(REASONS);
+  const rows = [
+    ...d.requests.map((r) => ({ id: "q" + r.id, at: r.createdAt, done: r.status === "done", title: r.text, sub: "Richiesta", Ic: I.Send, ok: "Aggiunto" })),
+    ...d.reports.map((r) => ({ id: "r" + r.id, at: r.createdAt, done: r.status === "done", title: r.title, sub: `Segnalazione · ${why[r.reason] || "Altro"}${r.episodeLabel ? " · " + r.episodeLabel : ""}`, Ic: I.Flag, ok: "Risolta" })),
+  ].sort((x, y) => y.at - x.at).slice(0, 30);
+  return (
+    <>
+      <div className="set-h">Le mie richieste</div>
+      {d.err && <p className="hint">Non riesco a caricare l'elenco.</p>}
+      {!d.err && !rows.length && <p className="hint">Non hai ancora inviato richieste o segnalazioni.</p>}
+      {rows.map((r) => (
+        <div className="mine" key={r.id}>
+          <span className="help-ic"><r.Ic size={18} /></span>
+          <span className="help-tx"><b>{r.title}</b><small>{r.sub} · {new Date(r.at).toLocaleDateString("it-IT", { day: "numeric", month: "short" })}</small></span>
+          <span className={"st" + (r.done ? " ok" : "")}>{r.done ? r.ok : "In attesa"}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
 // ---------- PROFILO ----------
 function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
   const [wrap, setWrap] = useState(false);
   const [rep, setRep] = useState(false);
   const [req, setReq] = useState(false);
+  const [tick, setTick] = useState(0); // ricarica "Le mie richieste" dopo un invio
   const [imgErr, setImgErr] = useState(false);
   const [tab, setTabRaw] = useState(() => { try { return sessionStorage.getItem("prof_tab") || "list"; } catch { return "list"; } });
   const setTab = (t) => { setTabRaw(t); try { sessionStorage.setItem("prof_tab", t); } catch {} };
@@ -291,6 +379,8 @@ function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
   const tabs = [["list", I.Bookmark, "Lista"], ["stats", I.Chart, "Statistiche"], ["settings", I.Sliders, "Impostazioni"], ["help", I.Flag, "Assistenza"]];
   const idx = Math.max(0, tabs.findIndex((t) => t[0] === tab));
   const anti = !!user.settings?.antispoiler;
+  const hide = spoilerHide(user);
+  const vib = user.settings?.haptics !== false;
   return (
     <div className="page prof">
       <div className="prof-card">
@@ -306,7 +396,7 @@ function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
       <div className="seg" role="tablist" style={{ "--n": tabs.length }}>
         <span className="seg-ind" style={{ transform: `translateX(${idx * 100}%)` }} />
         {tabs.map(([k, Ic, label]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); tg?.HapticFeedback?.selectionChanged?.(); }}>
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); haptic.selectionChanged?.(); }}>
             <Ic size={16} /> <span>{label}</span>
           </button>
         ))}
@@ -321,9 +411,28 @@ function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
 
         {tab === "settings" && (
           <div className="prof-help">
-            <button className="set-row" role="switch" aria-checked={anti} onClick={() => { setSetting("antispoiler", !anti); tg?.HapticFeedback?.selectionChanged?.(); }}>
-              <span className="help-tx"><b>Modalità anti-spoiler</b><small>Nelle serie nasconde le descrizioni degli episodi che non hai ancora visto. Le copertine restano sfocate finché non le sblocchi.</small></span>
+            <button className="set-row" role="switch" aria-checked={anti} onClick={() => { setSetting("antispoiler", !anti); haptic.selectionChanged?.(); }}>
+              <span className="help-tx"><b>Modalità anti-spoiler</b><small>Nelle serie nasconde gli spoiler degli episodi che non hai ancora visto. Quelli che segni come visti, o le serie già viste, non vengono mai nascosti.</small></span>
               <span className={"sw" + (anti ? " on" : "")}><i /></span>
+            </button>
+            {anti && (
+              <>
+                <div className="set-h">Cosa nascondere</div>
+                <div className="lvls" role="radiogroup">
+                  {HIDES.map(([k, l, d]) => (
+                    <button key={k} role="radio" aria-checked={hide === k} className={"lvl" + (hide === k ? " on" : "")} onClick={() => { setSetting("spoilerHide", k); haptic.selectionChanged?.(); }}>
+                      <span className="lvl-dot" />
+                      <span className="help-tx"><b>{l}</b><small>{d}</small></span>
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">Gli episodi che sblocchi con un tocco restano sbloccati.</p>
+              </>
+            )}
+            <div className="set-h">Generale</div>
+            <button className="set-row" role="switch" aria-checked={vib} onClick={() => { setSetting("haptics", !vib); if (!vib) tg?.HapticFeedback?.impactOccurred?.("medium"); }}>
+              <span className="help-tx"><b>Vibrazione</b><small>Un leggero feedback quando tocchi, voti o segni un titolo come visto.</small></span>
+              <span className={"sw" + (vib ? " on" : "")}><i /></span>
             </button>
           </div>
         )}
@@ -340,14 +449,15 @@ function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
               <span className="help-tx"><b>Richiedi un progetto</b><small>Manca un film o una serie? Chiedilo qui.</small></span>
               <span className="help-go">›</span>
             </button>
+            <MyRequests tick={tick} />
           </div>
         )}
       </div>
 
       <TmdbCredit />
       {wrap && features.wrap && <WrapView media={media} user={user} me={me} onClose={() => setWrap(false)} />}
-      {rep && <ReportSheet media={media} say={say} onClose={() => setRep(false)} />}
-      {req && <RequestSheet say={say} onClose={() => setReq(false)} />}
+      {rep && <ReportSheet media={media} say={say} onClose={() => { setRep(false); setTick((t) => t + 1); }} />}
+      {req && <RequestSheet say={say} onClose={() => { setReq(false); setTick((t) => t + 1); }} />}
     </div>
   );
 }
@@ -742,6 +852,7 @@ export default function App() {
   const [stack, setStack] = useState([location.search.includes("admin=1") ? { n: "admin" } : { n: "home" }]);
   const [toast, setToast] = useState("");
   const [splash, setSplash] = useState(true);
+  const [bell, setBell] = useState(null); // null = chiuso; altrimenti { prev } = ultima lettura prima di aprire
   const view = stack[stack.length - 1];
   const go = (v) => setStack((s) => [...s, v]);
   const tab = (v) => setStack([v]);
@@ -775,11 +886,33 @@ export default function App() {
   }, [stack.length]);
 
   const { media = [], categories = [], timeline = [], timelineOut = [], doomsday, features = {}, user = { watchlist: [], watched: [] }, me } = boot;
+  hapticOn = user.settings?.haptics !== false;
+  const notifs = user.notifs || [];
+  const unread = notifs.filter((n) => n.at > (user.nread || 0)).length;
+  const openBell = () => {
+    setBell({ prev: user.nread || 0 });
+    haptic.impactOccurred("light");
+    if (unread) {
+      const t = Math.max(Date.now(), ...notifs.map((n) => n.at));
+      setBoot((b) => ({ ...b, user: { ...b.user, nread: t } }));
+      api("notifs", { body: { action: "read" } }).catch(() => {});
+    }
+  };
+  const clearNotifs = () => {
+    setBoot((b) => ({ ...b, user: { ...b.user, notifs: [], nread: Date.now() } }));
+    api("notifs", { body: { action: "clear" } }).catch(() => {});
+    setBell(null);
+  };
+  const openNotif = (to) => {
+    setBell(null);
+    if (to.help) { try { sessionStorage.setItem("prof_tab", "help"); } catch {} tab({ n: "profile" }); }
+    else go(to);
+  };
 
   const watch = async (mediaId, episodeId) => {
     try {
       await api("watch", { body: { mediaId, episodeId } });
-      tg?.HapticFeedback?.notificationOccurred("success");
+      haptic.notificationOccurred("success");
       say("Video inviato nella chat");
       setTimeout(() => tg?.close(), 1200);
     } catch (e) {
@@ -795,20 +928,25 @@ export default function App() {
     try {
       const r = await api("rate", { body: { mediaId, value } });
       setBoot((b) => ({ ...b, user: r.user, media: b.media.map((x) => (x.id === mediaId ? { ...x, rating: r.rating } : x)) }));
-      tg?.HapticFeedback?.impactOccurred("light");
+      haptic.impactOccurred("light");
     } catch { say("Voto non riuscito"); }
   };
   const setSeen = async (add, remove) => {
     try {
       const u = await api("watched-set", { body: { add, remove } });
       setBoot((b) => ({ ...b, user: u }));
-      tg?.HapticFeedback?.impactOccurred("light");
+      haptic.impactOccurred("light");
     } catch { say("Salvataggio non riuscito"); }
   };
   const setSetting = async (key, value) => {
+    const prev = boot.user?.settings?.[key];
     setBoot((b) => ({ ...b, user: { ...b.user, settings: { ...(b.user.settings || {}), [key]: value } } }));
-    try { const u = await api("settings", { body: { key, value } }); setBoot((b) => ({ ...b, user: u })); }
-    catch { setBoot((b) => ({ ...b, user: { ...b.user, settings: { ...(b.user.settings || {}), [key]: !value } } })); say("Impostazione non salvata"); }
+    try { const u = await api("settings", { body: { key, value } }); setBoot((b) => ({ ...b, user: { ...u, unlocked: b.user.unlocked } })); }
+    catch { setBoot((b) => ({ ...b, user: { ...b.user, settings: { ...(b.user.settings || {}), [key]: prev } } })); say("Impostazione non salvata"); }
+  };
+  const unlock = async (id) => {
+    setBoot((b) => ({ ...b, user: { ...b.user, unlocked: [...new Set([...(b.user.unlocked || []), id])] } }));
+    try { await api("unlock", { body: { id } }); } catch { say("Sblocco non salvato"); }
   };
   const deep = useRef(false);
   useEffect(() => { // link condiviso: t.me/bot?startapp=t_<id> apre direttamente la scheda
@@ -821,7 +959,7 @@ export default function App() {
   const toggle = async (k, id) => {
     const u = await api("toggle", { body: { kind: k, id } });
     setBoot((b) => ({ ...b, user: u }));
-    tg?.HapticFeedback?.impactOccurred("light");
+    haptic.impactOccurred("light");
   };
 
   const cats = [...categories].sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -890,7 +1028,7 @@ export default function App() {
           </div>
         </div>
       );
-    } else if (view.n === "media" && find(view.id)) body = <Detail key={view.id + (view.season || "")} m={find(view.id)} user={user} me={me} watch={watch} toggle={toggle} say={say} rate={rate} initSeason={view.season} />;
+    } else if (view.n === "media" && find(view.id)) body = <Detail key={view.id + (view.season || "")} m={find(view.id)} user={user} me={me} watch={watch} toggle={toggle} say={say} rate={rate} unlock={unlock} initSeason={view.season} />;
     else if (view.n === "coll") body = <div className="page"><h1 className="ptitle">{view.title}</h1><Grid items={media.filter((m) => view.ids.includes(m.id)).sort(byRelease("asc"))} go={go} user={user} /></div>;
     else if (view.n === "cat") {
       const c = categories.find((x) => x.id === view.id);
@@ -920,7 +1058,8 @@ export default function App() {
   return (
     <>
       {splash && <div className="splash"><img src={logo} alt="" /><div className="tri" /></div>}
-      {!boot.error && !boot.gate && <Header onSearch={() => tab({ n: "search" })} />}
+      {!boot.error && !boot.gate && <Header onSearch={() => tab({ n: "search" })} onBell={openBell} unread={unread} />}
+      {bell && <NotifSheet notifs={notifs} media={media} readAt={bell.prev} onOpen={openNotif} onClear={clearNotifs} onClose={() => setBell(null)} />}
       {body}
       {!boot.error && !boot.gate && (
         <nav className={"nav" + (items.length > 5 ? " many" : "")}>

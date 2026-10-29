@@ -416,3 +416,25 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .rail .rk .card{flex:none;width:100%}
 .rk-n{position:absolute;z-index:2;top:6px;left:6px;font-style:normal;font-family:"Bebas Neue",Impact,sans-serif;font-size:20px;line-height:1;padding:3px 8px 2px;border-radius:var(--tag-r,9px);background:linear-gradient(135deg,#f0262c,var(--red) 60%,#c9121a);box-shadow:0 2px 10px rgba(0,0,0,.45)}
 .rk .ct{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;line-height:1.25}
+
+/* ---------- anti-spoiler: livelli, e "le mie richieste" ---------- */
+.lvls{display:flex;flex-direction:column;gap:8px}
+.lvl{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--s1);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;color:var(--tx)}
+.lvl.on{border-color:var(--red);background:rgba(227,22,28,.1)}
+.lvl-dot{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--bd)}
+.lvl.on .lvl-dot{border-color:var(--red);background:radial-gradient(circle,var(--red) 0 45%,transparent 50%)}
+.mine{display:flex;align-items:center;gap:12px;background:var(--s1);border:1px solid var(--bd);border-radius:14px;padding:10px 12px}
+.mine .help-ic{width:38px;height:38px;border-radius:11px}
+.mine .help-tx b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mine .st{flex:none;font-size:11px;font-weight:700;padding:4px 9px;border-radius:99px;background:var(--s2);color:var(--tx2)}
+.mine .st.ok{background:rgba(46,160,67,.18);color:#5fd078}
+
+/* ---------- campanellino notifiche ---------- */
+.ico.bell{position:relative}
+.ico .dot{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--red);color:#fff;font:800 11px/1 system-ui,sans-serif;display:flex;align-items:center;justify-content:center;border:2px solid #000}
+.nrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--s1);border:1px solid var(--bd);border-radius:14px;padding:10px 12px;color:var(--tx)}
+.nrow:disabled{opacity:1}
+.nrow.unread{border-color:var(--red);background:rgba(227,22,28,.08)}
+.nrow .help-ic{width:38px;height:38px;border-radius:11px}
+.nrow .help-tx b{font-size:14px}
+.nrow .when{flex:none;font-size:11px;color:var(--tx2)}
