@@ -18,6 +18,41 @@ const store = () => getStore({ name: "vault", consistency: "strong" });
 const json = (d, s = 200) =>
   new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });
 const uid = () => crypto.randomBytes(5).toString("hex");
+// ---------- Tracker crediti (stima): conta chiamate, tempo e byte del backend, giorno per giorno ----------
+const RATE = { gb: 20, gbh: 10, req10k: 2, deploy: 15 }; // crediti: per GB di banda, per GB-ora di calcolo, ogni 10.000 richieste, per deploy
+const SHELL = { kb: 250, req: 12 };                      // quota stimata per ogni apertura dell'app (pagina, codice, immagini statiche serviti dalla CDN)
+const romeDay = (t = Date.now()) => new Date(t).toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+const r2 = (n) => Math.round(n * 100) / 100;
+const emptyDay = () => ({ req: 0, ms: 0, bytes: 0, opens: 0, deploys: 0 });
+const creditsOf = (d) => {
+  const bw = ((d.bytes + d.opens * SHELL.kb * 1024) / 1073741824) * RATE.gb;
+  const comp = (d.ms / 1000 / 3600) * RATE.gbh; // funzioni con 1 GB di memoria
+  const rq = ((d.req + d.opens * SHELL.req) / 10000) * RATE.req10k;
+  const dep = (d.deploys || 0) * RATE.deploy;
+  return { bw: r2(bw), comp: r2(comp), rq: r2(rq), dep: r2(dep), total: r2(bw + comp + rq + dep) };
+};
+async function meterTrack(req, res, ms, context) {
+  const [a, b] = new URL(req.url).pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
+  if (a === "admin" && b === "meter") return; // il tracker non conta se stesso
+  let bytes = 0;
+  try { bytes = (await res.clone().arrayBuffer()).byteLength; } catch {}
+  const key = "meter:" + romeDay();
+  const d = (await store().get(key, { type: "json" }).catch(() => null)) || emptyDay();
+  d.req++; d.ms += ms; d.bytes += bytes;
+  if (a === "catalog") {
+    d.opens++;
+    // un nuovo deploy in produzione si riconosce dall'id: la prima volta che lo si vede vale 15 crediti
+    const dep = context?.deploy?.id || process.env.DEPLOY_ID;
+    if (dep) {
+      const last = await store().get("meter:deploy").catch(() => null);
+      if (last !== dep) {
+        await store().set("meter:deploy", String(dep)).catch(() => {});
+        if (last && (context?.deploy?.context || "production") === "production") d.deploys = (d.deploys || 0) + 1;
+      }
+    }
+  }
+  await store().setJSON(key, d);
+}
 const admins = () => (process.env.ADMIN_IDS || "").split(",").map((x) => x.trim()).filter(Boolean);
 
 // ---------- Auth: validazione initData di Telegram ----------
@@ -563,7 +598,7 @@ async function bot(req) {
 }
 
 // ---------- Router ----------
-export default async (req) => {
+const handler = async (req) => {
   const url = new URL(req.url);
   SITE = (process.env.SITE_URL || url.origin).replace(/\/$/, "");
   const [a, b, c, d] = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
@@ -783,6 +818,46 @@ export default async (req) => {
   if (a === "admin") {
     if (!isAdmin) { console.warn("admin negato per", user.id); return json({ error: "forbidden" }, 403); }
 
+    if (b === "meter") {
+      const cfg = (await store().get("meter:cfg", { type: "json" }).catch(() => null)) || {};
+      if (req.method === "POST") {
+        const body = await req.json();
+        const num = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) < 1e7 ? Number(v) : null);
+        if (body.reset) { delete cfg.balance; delete cfg.calibAt; delete cfg.calibDay; delete cfg.calibUsed; }
+        if (body.plan !== undefined) { const v = num(body.plan); if (v === null) return json({ error: "bad request" }, 400); cfg.plan = v; }
+        if (body.balance !== undefined) {
+          const v = num(body.balance);
+          if (v === null) return json({ error: "bad request" }, 400);
+          const today = (await store().get("meter:" + romeDay(), { type: "json" }).catch(() => null)) || emptyDay();
+          Object.assign(cfg, { balance: v, calibAt: Date.now(), calibDay: romeDay(), calibUsed: creditsOf(today).total });
+        }
+        await store().setJSON("meter:cfg", cfg);
+        return json({ ok: true });
+      }
+      const today = romeDay(), base = new Date(today + "T12:00:00Z").getTime();
+      const keys = Array.from({ length: 30 }, (_, i) => new Date(base - (29 - i) * 864e5).toISOString().slice(0, 10));
+      const days = await Promise.all(keys.map(async (k) => {
+        const d = (await store().get("meter:" + k, { type: "json" }).catch(() => null)) || emptyDay();
+        return { d: k, req: d.req, opens: d.opens, deploys: d.deploys || 0, mb: r2(d.bytes / 1048576), credits: creditsOf(d) };
+      }));
+      const plan = cfg.plan ?? 300;
+      const month = r2(days.filter((x) => x.d.startsWith(today.slice(0, 7))).reduce((n, x) => n + x.credits.total, 0));
+      let remaining = plan - month;
+      if (cfg.balance != null && cfg.calibDay) {
+        let since = 0;
+        for (const x of days) {
+          if (x.d > cfg.calibDay) since += x.credits.total;
+          else if (x.d === cfg.calibDay) since += Math.max(0, x.credits.total - (cfg.calibUsed || 0));
+        }
+        remaining = cfg.balance - since;
+      }
+      const avg7 = days.slice(-7).reduce((n, x) => n + x.credits.total, 0) / 7;
+      const [y, m] = today.split("-").map(Number);
+      return json({
+        plan, remaining: r2(remaining), month, avg7: r2(avg7), forecast: r2(avg7 * new Date(y, m, 0).getDate()),
+        calibrated: cfg.balance != null, calibAt: cfg.calibAt || null, balance: cfg.balance ?? null, days, rates: RATE, shell: SHELL,
+      });
+    }
     if (b === "catalog") return json(await getDb());
     if (b === "autolink" && req.method === "GET") return json(await getPending());
     if (b === "autolink-confirm" && req.method === "POST") {
@@ -1167,4 +1242,11 @@ export default async (req) => {
   }
 
   return json({ error: "not_found" }, 404);
+};
+
+export default async (req, context) => {
+  const t0 = Date.now();
+  const res = await handler(req, context);
+  try { await meterTrack(req, res, Date.now() - t0, context); } catch {} // il tracker non deve mai rompere una risposta
+  return res;
 };
