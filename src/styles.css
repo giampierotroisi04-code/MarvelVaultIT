@@ -438,3 +438,11 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .nrow .help-ic{width:38px;height:38px;border-radius:11px}
 .nrow .help-tx b{font-size:14px}
 .nrow .when{flex:none;font-size:11px;color:var(--tx2)}
+
+/* ---------- admin: sezioni e schede ---------- */
+.agroups{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0 8px}
+.agroups button{position:relative;padding:10px 4px;border-radius:12px;background:var(--s1);border:1px solid var(--bd);color:var(--tx2);font-weight:700;font-size:13px}
+.agroups button.on{background:var(--red);border-color:var(--red);color:#fff}
+.agroups .n{position:absolute;top:-6px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:#fff;color:#000;font:800 11px/18px system-ui,sans-serif}
+.chip .n{margin-left:6px;background:var(--red);color:#fff;border-radius:99px;padding:1px 6px;font-size:11px}
+.chip.on .n{background:#fff;color:var(--red)}

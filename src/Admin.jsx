@@ -319,6 +319,55 @@ function Stats() {
   );
 }
 
+// ---------- Crediti Netlify (stima) ----------
+function Credits({ say }) {
+  const [d, setD] = useState(null);
+  const [bal, setBal] = useState("");
+  const [plan, setPlan] = useState("");
+  const load = () => api("admin/meter").then(setD).catch(() => say("Non riesco a caricare i crediti"));
+  useEffect(() => { load(); }, []);
+  if (!d) return <p className="hint">Carico…</p>;
+  const save = async (body, msg) => {
+    try { await api("admin/meter", { body }); say(msg); setBal(""); setPlan(""); load(); }
+    catch { say("Salvataggio non riuscito"); }
+  };
+  const last = d.days.slice(-14);
+  const max = Math.max(1, ...last.map((x) => x.credits.total));
+  const fmt = (n) => (n >= 100 ? Math.round(n) : n.toFixed(1));
+  const today = d.days[d.days.length - 1];
+  return (
+    <div>
+      <div className="stat-grid">
+        {[[fmt(d.remaining), d.calibrated ? "Crediti rimasti (allineati)" : "Crediti rimasti (stima)"], [fmt(d.month), "Usati questo mese"], [fmt(today.credits.total), "Usati oggi"], [fmt(d.forecast), "Previsione del mese"]]
+          .map(([n, l]) => <div className="stat" key={l}><b>{n}</b><small>{l}</small></div>)}
+      </div>
+      <h2 className="sub">Crediti al giorno, ultimi 14 giorni</h2>
+      <div className="bars">
+        {last.map((x) => (
+          <div key={x.d} className="bcol"><span>{fmt(x.credits.total)}</span><i style={{ height: 6 + (x.credits.total / max) * 70 }} /><small>{x.d.slice(8)}/{x.d.slice(5, 7)}</small></div>
+        ))}
+      </div>
+      <h2 className="sub">Giorno per giorno</h2>
+      {[...d.days].reverse().map((x) => (
+        <div className="item" key={x.d}>
+          <b>{x.d.slice(8)}/{x.d.slice(5, 7)} · {fmt(x.credits.total)} crediti</b>
+          <small> banda {fmt(x.credits.bw)} · calcolo {fmt(x.credits.comp)} · richieste {fmt(x.credits.rq)}{x.deploys ? ` · deploy ${x.deploys}` : ""} · {x.opens} aperture</small>
+        </div>
+      ))}
+      <h2 className="sub">Allinea al saldo reale</h2>
+      <div className="box">
+        Apri Netlify, nella pagina Billing del team, e copia i crediti disponibili. Scrivili qui: da quel momento il contatore parte da quel numero.
+        <input className="in" type="number" inputMode="decimal" placeholder="Crediti disponibili su Netlify" value={bal} onChange={(e) => setBal(e.target.value)} />
+        <button className="btn red" disabled={bal === ""} onClick={() => save({ balance: Number(bal) }, "Saldo allineato")}>Allinea</button>
+        {d.calibrated && <button className="btn" onClick={() => save({ reset: true }, "Allineamento tolto")}>Torna alla stima</button>}
+        <input className="in" type="number" inputMode="decimal" placeholder={`Crediti del piano al mese (ora ${d.plan})`} value={plan} onChange={(e) => setPlan(e.target.value)} />
+        <button className="btn" disabled={plan === ""} onClick={() => save({ plan: Number(plan) }, "Piano aggiornato")}>Salva piano</button>
+      </div>
+      <p className="hint">È una stima: conta le chiamate al backend e aggiunge una quota fissa per ogni apertura dell'app (circa {d.shell.kb} KB e {d.shell.req} richieste). Tariffe usate: {d.rates.gb} crediti per GB di banda, {d.rates.gbh} per GB-ora di calcolo, {d.rates.req10k} ogni 10.000 richieste, {d.rates.deploy} per deploy. Il ciclo di Netlify può partire un giorno diverso dal primo del mese.</p>
+    </div>
+  );
+}
+
 // ---------- Richieste e segnalazioni ----------
 function Inbox({ kind }) {
   const [d, setD] = useState(null);
@@ -795,6 +844,28 @@ const nz = (t = "") => String(t).toLowerCase().normalize("NFD").replace(/[\u0300
 const matchQ = (m, q) => !q || !q.trim() || nz(m.title + " " + (m.year || "")).includes(nz(q));
 
 // ---------- Pannello ----------
+// Navigazione dell'admin: 4 sezioni, ognuna con le sue schede
+const GROUPS = [
+  { id: "catalog", label: "Catalogo", tabs: [["media", "Contenuti"], ["cats", "Categorie"], ["timeline", "Timeline"], ["doom", "Doomsday"], ["autolink", "Da collegare"]] },
+  { id: "users", label: "Utenti", tabs: [["requests", "Richieste"], ["reports", "Segnalazioni"]] },
+  { id: "data", label: "Dati", tabs: [["stats", "Statistiche"], ["credits", "Crediti"]] },
+  { id: "tools", label: "Strumenti", tabs: [["features", "Funzioni"], ["titles", "Dati titoli"], ["bot", "Bot e backup"]] },
+];
+const HINTS = {
+  media: "Aggiungi, modifica o elimina film e serie.",
+  cats: "Organizza le categorie e le sottocategorie.",
+  timeline: "Ordine cronologico dei titoli e chi può vedere la Timeline.",
+  doom: "Piano e conto alla rovescia della Road to Doomsday.",
+  autolink: "Video appena arrivati nel canale, da collegare al titolo giusto.",
+  requests: "Titoli chiesti dagli utenti. Segnali come fatti quando li aggiungi.",
+  reports: "Problemi segnalati dagli utenti sui video.",
+  stats: "Utenti, video inviati e titoli più guardati.",
+  credits: "Consumo giornaliero dei crediti Netlify e quanti ne restano.",
+  features: "Scegli chi può vedere le statistiche personali e MCU Wrapped.",
+  titles: "Durate e date di uscita prese da TMDB.",
+  bot: "Backup del catalogo e controllo degli anniversari.",
+};
+
 export default function Admin({ say, onChange }) {
   const [tab, setTab] = useState("media");
   const [q, setQ] = useState("");
@@ -804,37 +875,65 @@ export default function Admin({ say, onChange }) {
   const shown = (db?.media || []).filter((m) => matchQ(m, q)).sort((a, b) => b.createdAt - a.createdAt);
   const reload = () => api("admin/catalog").then((d) => { setDb(d); onChange?.(); });
   useEffect(() => { api("admin/catalog").then(setDb).catch(() => say("Accesso negato")); }, []);
+  const grp = GROUPS.find((g) => g.tabs.some(([k]) => k === tab)) || GROUPS[0];
+  const [last, setLast] = useState({}); // ultima scheda aperta in ogni sezione
+  useEffect(() => { setLast((l) => ({ ...l, [grp.id]: tab })); }, [tab]);
+  const [n, setN] = useState({ req: 0, rep: 0, link: 0 }); // richieste, segnalazioni e video da collegare ancora aperti
+  useEffect(() => {
+    Promise.allSettled([api("admin/inbox"), api("admin/autolink")]).then(([i, l]) => setN({
+      req: i.status === "fulfilled" ? i.value.requests.filter((x) => x.status === "open").length : 0,
+      rep: i.status === "fulfilled" ? i.value.reports.filter((x) => x.status === "open").length : 0,
+      link: l.status === "fulfilled" ? (l.value.items || []).length : 0,
+    }));
+  }, [tab]);
   if (!db) return <div className="page">Carico…</div>;
   if (form)
     return <MediaForm init={form} cats={db.categories} onCancel={() => setForm(null)} onDone={() => { setForm(null); reload(); say("Salvato"); }} />;
 
   const del = async (m) => { if (await ask(`Eliminare «${m.title}»?`)) { await api("admin/media/" + m.id, { method: "DELETE" }); reload(); } };
+  const body = () => {
+    if (tab === "cats") return <Cats cats={db.categories} media={db.media} reload={reload} />;
+    if (tab === "stats") return <Stats />;
+    if (tab === "credits") return <Credits say={say} />;
+    if (tab === "features") return <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /></>;
+    if (tab === "titles") return <><Runtimes media={db.media} say={say} onDone={reload} /><TmdbDates say={say} onDone={reload} /></>;
+    if (tab === "bot") return <><Backup say={say} /><Anniv say={say} /></>;
+    if (tab === "timeline") return <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></>;
+    if (tab === "doom") return <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></>;
+    if (tab === "autolink") return <AutoLink media={db.media} onDone={reload} />;
+    if (tab === "requests") return <Inbox kind="request" />;
+    if (tab === "reports") return <Inbox kind="report" />;
+    return (
+      <>
+        <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
+        {q.trim() && !shown.length && <p className="hint">Nessun progetto trovato.</p>}
+        {shown.map((m) => (
+          <div className="item" key={m.id}>
+            <b>{m.title}</b> <small>{m.type === "movie" ? "Film" : `Serie · ${m.seasons?.reduce((n, s) => n + s.episodes.length, 0)} ep.`}{m.visible === false ? " · nascosto" : ""}</small>
+            <div className="actions"><button className="btn small" onClick={() => setForm(m)}><I.Pencil size={16} /> Modifica</button><button className="btn small" onClick={() => del(m)}><I.Trash size={16} /></button></div>
+          </div>
+        ))}
+      </>
+    );
+  };
   return (
     <div className="page">
       <h1>Admin <span className="badge">ADMIN</span></h1>
-      <div className="chips">
-        <button className={"chip" + (tab === "media" ? " on" : "")} onClick={() => setTab("media")}>Contenuti</button>
-        <button className={"chip" + (tab === "cats" ? " on" : "")} onClick={() => setTab("cats")}>Categorie</button>
-        <button className={"chip" + (tab === "timeline" ? " on" : "")} onClick={() => setTab("timeline")}>Timeline</button>
-        <button className={"chip" + (tab === "doom" ? " on" : "")} onClick={() => setTab("doom")}>Doomsday</button>
-        <button className={"chip" + (tab === "autolink" ? " on" : "")} onClick={() => setTab("autolink")}>Da collegare</button>
-        <button className={"chip" + (tab === "requests" ? " on" : "")} onClick={() => setTab("requests")}>Richieste</button>
-        <button className={"chip" + (tab === "reports" ? " on" : "")} onClick={() => setTab("reports")}>Segnalazioni</button>
-        <button className={"chip" + (tab === "stats" ? " on" : "")} onClick={() => setTab("stats")}>Statistiche</button>
+      <div className="agroups">
+        {GROUPS.map((g) => {
+          const c = g.id === "users" ? n.req + n.rep : g.id === "catalog" ? n.link : 0;
+          return <button key={g.id} className={g.id === grp.id ? "on" : ""} onClick={() => setTab(last[g.id] || g.tabs[0][0])}>{g.label}{c > 0 && <span className="n">{c}</span>}</button>;
+        })}
       </div>
-      {db && ["media", "timeline", "doom"].includes(tab) && <input className="in" placeholder={`Cerca tra ${db.media.length} progetti…`} value={q} onChange={(e) => setQ(e.target.value)} />}
-      {tab === "cats" ? <Cats cats={db.categories} media={db.media} reload={reload} /> : tab === "stats" ? <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Runtimes media={db.media} say={say} onDone={reload} /><Stats /><Backup say={say} /><TmdbDates say={say} onDone={reload} /><Anniv say={say} /></> : tab === "timeline" ? <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></> : tab === "doom" ? <><Vis k="doom" features={db.features} say={say} onDone={reload} /><DoomAdmin media={db.media} doom={db.doomsday} q={q} say={say} onDone={reload} /></> : tab === "autolink" ? <AutoLink media={db.media} onDone={reload} /> : tab === "requests" ? <Inbox kind="request" /> : tab === "reports" ? <Inbox kind="report" /> : (
-        <>
-          <button className="btn red" onClick={() => setForm({ type: "movie", title: "", year: "", overview: "", categoryIds: [], visible: true, featured: false, seasons: [], source: null })}><I.Plus size={16} /> Aggiungi contenuto</button>
-          {q.trim() && !shown.length && <p className="hint">Nessun progetto trovato.</p>}
-          {shown.map((m) => (
-            <div className="item" key={m.id}>
-              <b>{m.title}</b> <small>{m.type === "movie" ? "Film" : `Serie · ${m.seasons?.reduce((n, s) => n + s.episodes.length, 0)} ep.`}{m.visible === false ? " · nascosto" : ""}</small>
-              <div className="actions"><button className="btn small" onClick={() => setForm(m)}><I.Pencil size={16} /> Modifica</button><button className="btn small" onClick={() => del(m)}><I.Trash size={16} /></button></div>
-            </div>
-          ))}
-        </>
-      )}
+      <div className="chips">
+        {grp.tabs.map(([k, l]) => {
+          const c = k === "requests" ? n.req : k === "reports" ? n.rep : k === "autolink" ? n.link : 0;
+          return <button key={k} className={"chip" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>{l}{c > 0 && <span className="n">{c}</span>}</button>;
+        })}
+      </div>
+      <p className="hint">{HINTS[tab]}</p>
+      {["media", "timeline", "doom"].includes(tab) && <input className="in" placeholder={`Cerca tra ${db.media.length} progetti…`} value={q} onChange={(e) => setQ(e.target.value)} />}
+      {body()}
     </div>
   );
 }
