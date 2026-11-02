@@ -157,6 +157,13 @@ function MediaForm({ init, cats, onDone, onCancel }) {
       <div className="row2">
         <label className="chk"><input type="checkbox" checked={m.visible !== false} onChange={(e) => set({ visible: e.target.checked })} /> Visibile</label>
         <label className="chk"><input type="checkbox" checked={!!m.featured} onChange={(e) => set({ featured: e.target.checked })} /> In evidenza in Home (uno solo)</label>
+        <label className="chk"><input type="checkbox" checked={!!m.soon} onChange={(e) => set({ soon: e.target.checked })} /> In arrivo (compare in Home nella sezione "In arrivo")</label>
+        {m.soon && (
+          <>
+            <input className="in" type="date" title="Data di uscita prevista (facoltativa, visibile agli utenti)" value={m.soonDate || ""} onChange={(e) => set({ soonDate: e.target.value })} />
+            <p className="hint">Data di uscita prevista, facoltativa: gli utenti la vedono. Quando colleghi un video il titolo smette da solo di essere "in arrivo".</p>
+          </>
+        )}
       </div>
 
       <h2>Categorie</h2>
@@ -909,7 +916,7 @@ export default function Admin({ say, onChange }) {
         {q.trim() && !shown.length && <p className="hint">Nessun progetto trovato.</p>}
         {shown.map((m) => (
           <div className="item" key={m.id}>
-            <b>{m.title}</b> <small>{m.type === "movie" ? "Film" : `Serie · ${m.seasons?.reduce((n, s) => n + s.episodes.length, 0)} ep.`}{m.visible === false ? " · nascosto" : ""}</small>
+            <b>{m.title}</b> <small>{m.type === "movie" ? "Film" : `Serie · ${m.seasons?.reduce((n, s) => n + s.episodes.length, 0)} ep.`}{m.visible === false ? " · nascosto" : ""}{m.soon ? " · in arrivo" : ""}</small>
             <div className="actions"><button className="btn small" onClick={() => setForm(m)}><I.Pencil size={16} /> Modifica</button><button className="btn small" onClick={() => del(m)}><I.Trash size={16} /></button></div>
           </div>
         ))}

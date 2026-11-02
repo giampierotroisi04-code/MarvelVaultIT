@@ -19,6 +19,28 @@ const haptic = {
 const catSort = (c) => { const o = c?.mediaOrder || []; const rel = byRelease("asc"); return (a, b) => { const x = o.indexOf(a.id), y = o.indexOf(b.id); return x >= 0 && y >= 0 ? x - y : x >= 0 ? -1 : y >= 0 ? 1 : rel(a, b); }; };
 const byNum = (a, b) => (a.number || 0) - (b.number || 0);
 const kind = (m) => (m.type === "movie" ? "Film" : "Serie TV");
+// "In arrivo": lo decide l'admin; finisce da sola appena al titolo viene collegato un video
+const hasAnyVideo = (m) => !!m.hasVideo || (m.seasons || []).some((s) => s.episodes.some((e) => e.hasVideo));
+const isSoon = (m) => !!m.soon && !hasAnyVideo(m);
+const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+const soonInfo = (m) => {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(m.soonDate || "") ? new Date(m.soonDate + "T12:00:00") : null;
+  if (!d || isNaN(d)) return { short: "Prossimamente", long: "Prossimamente" };
+  const days = Math.ceil((d - Date.now()) / 864e5);
+  const full = `${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`;
+  return {
+    short: days < 0 ? "A breve" : `Dal ${d.getDate()} ${MESI[d.getMonth()]}`,
+    long: days < 0 ? "Disponibile a breve" : days === 0 ? "Esce oggi" : days === 1 ? "Esce domani" : `Esce il ${full} · tra ${days} giorni`,
+  };
+};
+const fmtMin = (n) => { n = Math.round(n || 0); if (n < 60) return `${n} min`; const h = Math.floor(n / 60), r = n % 60; return r ? `${h} h ${r} min` : `${h} h`; };
+// avanzamento di una serie (episodi guardabili visti / totali); null se non iniziata
+const progOf = (m, watched = []) => {
+  if (m.type !== "series") return null;
+  const all = (m.seasons || []).flatMap((s) => s.episodes).filter((e) => e.hasVideo);
+  const n = all.filter((e) => watched.includes(e.id)).length;
+  return all.length && n > 0 ? { n, total: all.length } : null;
+};
 
 // Testo lungo: accorciato, con "Leggi tutto" / "Riduci"
 function Clamp({ text, lines = 3, className = "" }) {
@@ -55,22 +77,26 @@ function Poster({ m }) {
   return src ? <img src={src} loading="lazy" alt="" /> : <div className="ph"><I.Film size={28} /></div>;
 }
 
-function Card({ m, go, seen }) {
+function Card({ m, go, seen, prog, extra }) {
   return (
     <div className="card" onClick={() => go({ n: "media", id: m.id })}>
       <div className="pw">
         <Poster m={m} />
-        <span className="tag">{m.type === "series" ? <I.Tv size={11} /> : <I.Film size={11} />} {m.type === "series" ? "Serie" : "Film"}</span>
+        {isSoon(m)
+          ? <span className="tag soon">In arrivo</span>
+          : <span className="tag">{m.type === "series" ? <I.Tv size={11} /> : <I.Film size={11} />} {m.type === "series" ? "Serie" : "Film"}</span>}
         {seen && <span className="seen"><I.Check size={12} /></span>}
+        {prog && prog.n < prog.total && <span className="pbar"><i style={{ width: `${(prog.n / prog.total) * 100}%` }} /></span>}
       </div>
       <b className="ct">{m.title}</b>
+      {extra && <small className="cx">{extra}</small>}
     </div>
   );
 }
 
 const Grid = ({ items, go, user }) =>
   items.length
-    ? <div className="grid">{items.map((m) => <Card key={m.id} m={m} go={go} seen={user.watched.includes(m.id)} />)}</div>
+    ? <div className="grid">{items.map((m) => <Card key={m.id} m={m} go={go} seen={user.watched.includes(m.id)} prog={progOf(m, user.watched)} />)}</div>
     : null;
 
 const Rail = ({ title, items, go, user }) =>
@@ -80,7 +106,7 @@ const Rail = ({ title, items, go, user }) =>
         <h2>{title}</h2>
         {items.length > 8 && <button onClick={() => go({ n: "coll", title, ids: items.map((m) => m.id) })}>Vedi tutti <I.Chevron size={16} /></button>}
       </div>
-      <div className="rail">{items.slice(0, 20).map((m) => <Card key={m.id} m={m} go={go} seen={user.watched.includes(m.id)} />)}</div>
+      <div className="rail">{items.slice(0, 20).map((m) => <Card key={m.id} m={m} go={go} seen={user.watched.includes(m.id)} prog={progOf(m, user.watched)} />)}</div>
     </section>
   ) : null;
 
@@ -93,7 +119,7 @@ const TopRail = ({ items, go, user }) =>
         {items.map((m, i) => (
           <div className="rk" key={m.id}>
             <i className="rk-n">{i + 1}</i>
-            <Card m={m} go={go} seen={user.watched.includes(m.id)} />
+            <Card m={m} go={go} seen={user.watched.includes(m.id)} prog={progOf(m, user.watched)} />
           </div>
         ))}
       </div>
@@ -262,12 +288,25 @@ function Stars({ value = 0, onRate }) {
   );
 }
 
-function Detail({ m, user, me, watch, toggle, say, rate, unlock, initSeason }) {
+function Detail({ m, user, me, watch, toggle, say, rate, unlock, setSeen, initSeason }) {
   const seasons = [...(m.seasons || [])].sort(byNum);
-  const [sid, setSid] = useState(seasons.some((x) => x.id === initSeason) ? initSeason : seasons[0]?.id);
+  const seen = (id) => user.watched.includes(id);
+  const soon = isSoon(m);
+  // tutti gli episodi in ordine, con la loro stagione
+  const epsAll = seasons.flatMap((s) => [...s.episodes].sort(byNum).map((e) => ({ ...e, sid: s.id, sn: s.number })));
+  const avail = epsAll.filter((e) => e.hasVideo);
+  const seenN = avail.filter((e) => seen(e.id)).length;
+  const next = avail.find((e) => !seen(e.id)) || null; // prossimo episodio da guardare
+  // stagione aperta: quella scelta navigando, poi l'ultima aperta su questa serie, poi quella del prossimo episodio
+  const savedKey = "mv_season_" + m.id;
+  const saved = (() => { try { return localStorage.getItem(savedKey); } catch { return null; } })();
+  const first = [initSeason, saved, next?.sid].find((x) => x && seasons.some((s) => s.id === x)) || seasons[0]?.id;
+  const [sid, setSid] = useState(first);
+  const openSeason = (id) => { setSid(id); try { localStorage.setItem(savedKey, id); } catch {} };
   const [rep, setRep] = useState(false);
   const season = seasons.find((s) => s.id === sid);
-  const seen = (id) => user.watched.includes(id);
+  const seasonEps = season ? season.episodes.filter((e) => e.hasVideo) : [];
+  const seasonDone = seasonEps.length > 0 && seasonEps.every((e) => seen(e.id));
   const hide = spoilerHide(user);
   const spoil = (e) => isLocked(user, m, e);
   const share = () => {
@@ -278,6 +317,7 @@ function Detail({ m, user, me, watch, toggle, say, rate, unlock, initSeason }) {
   };
   const bg = art(m, "backdrop") || art(m, "poster");
   const inList = user.watchlist.includes(m.id);
+  const info = soon ? soonInfo(m) : null;
   return (
     <div>
       <div className="dhero" style={bg ? { backgroundImage: `url(${bg})` } : {}}><div className="hshade" /></div>
@@ -285,41 +325,74 @@ function Detail({ m, user, me, watch, toggle, say, rate, unlock, initSeason }) {
         <div className="pills">
           <span className="pill">{m.type === "movie" ? <I.Film size={13} /> : <I.Tv size={13} />} {kind(m)}</span>
           {m.year && <span className="pill">{m.year}</span>}
-          {m.type === "series" && <span className="pill">{seasons.length} {seasons.length === 1 ? "stagione" : "stagioni"}</span>}
-          {m.type === "series" && (() => { const all = seasons.flatMap((x) => x.episodes).filter((e) => e.hasVideo); const n = all.filter((e) => seen(e.id)).length; return all.length > 0 && n > 0 ? <span className="pill">{n}/{all.length} visti</span> : null; })()}
+          {m.type === "series" && seasons.length > 0 && <span className="pill">{seasons.length} {seasons.length === 1 ? "stagione" : "stagioni"}</span>}
+          {m.type === "series" && epsAll.length > 0 && <span className="pill">{epsAll.length} {epsAll.length === 1 ? "episodio" : "episodi"}</span>}
+          {m.runtime > 0 && <span className="pill">{fmtMin(m.runtime)}{m.type === "series" ? " in totale" : ""}</span>}
+          {m.rating && <span className="pill">★ {m.rating.avg.toFixed(1)}</span>}
+          {m.views > 0 && <span className="pill">{m.views.toLocaleString("it-IT")} {m.views === 1 ? "visione" : "visioni"}</span>}
+          {m.type === "movie" && seen(m.id) && <span className="pill ok"><I.Check size={12} /> Visto</span>}
         </div>
         <h1 className="dtitle">{m.title}</h1>
+        {soon && (
+          <div className="soonbox">
+            <b>In arrivo</b>
+            <span>{info.long}</span>
+            <small>Aggiungilo alla Lista: ti avviseremo nel campanellino quando sarà disponibile.</small>
+          </div>
+        )}
         <div className="actions">
-          {m.type === "movie" && m.hasVideo && <button className="btn primary" onClick={() => watch(m.id)}><I.Play size={18} /> Guarda</button>}
-          <button className="btn round" aria-label="Lista" onClick={() => toggle("watchlist", m.id)}><I.Bookmark size={20} fill={inList ? "currentColor" : "none"} /></button>
+          {soon && <button className="btn primary" onClick={() => toggle("watchlist", m.id)}><I.Bookmark size={18} fill={inList ? "currentColor" : "none"} /> {inList ? "Ti avviseremo" : "Avvisami"}</button>}
+          {!soon && m.type === "movie" && m.hasVideo && <button className="btn primary" onClick={() => watch(m.id)}><I.Play size={18} /> {seen(m.id) ? "Rivedi" : "Guarda"}</button>}
+          {!soon && m.type === "series" && avail.length > 0 && (
+            <button className="btn primary" onClick={() => watch(m.id, (next || avail[0]).id)}>
+              <I.Play size={18} /> {next ? (seenN > 0 ? `Continua S${next.sn} · E${next.number}` : "Inizia a guardare") : "Rivedi dall'inizio"}
+            </button>
+          )}
+          {!soon && <button className="btn round" aria-label="Lista" onClick={() => toggle("watchlist", m.id)}><I.Bookmark size={20} fill={inList ? "currentColor" : "none"} /></button>}
           <button className="btn round" aria-label="Condividi" onClick={share}><I.Share size={20} /></button>
-          {m.type === "movie" && <button className="btn round" aria-label="Visto" onClick={() => toggle("watched", m.id)}>{seen(m.id) ? <I.Check size={20} /> : <I.Eye size={20} />}</button>}
         </div>
-        <div className="rating">
-          <span className="ravg">★ {m.rating ? m.rating.avg.toFixed(1) : "–"}<small>{m.rating ? ` (${m.rating.count} ${m.rating.count === 1 ? "voto" : "voti"})` : " nessun voto"}</small></span>
-          <div className="rmine"><small>Il tuo voto</small><Stars value={user.ratings?.[m.id] || 0} onRate={(v) => rate(m.id, v)} /></div>
-        </div>
+        {!soon && m.type === "movie" && m.hasVideo && (
+          <button className="lnk markseen" onClick={() => toggle("watched", m.id)}>{seen(m.id) ? "Segna come non visto" : "Segna come visto"}</button>
+        )}
+        {m.type === "series" && avail.length > 0 && seenN > 0 && (
+          <div className="prog">
+            <div className="pbar2"><i style={{ width: `${(seenN / avail.length) * 100}%` }} /></div>
+            <small>{seenN} di {avail.length} episodi visti{seenN === avail.length ? " · serie completata 🎉" : ""}</small>
+          </div>
+        )}
+        {!soon && (
+          <div className="rating">
+            <span className="ravg">★ {m.rating ? m.rating.avg.toFixed(1) : "–"}<small>{m.rating ? ` (${m.rating.count} ${m.rating.count === 1 ? "voto" : "voti"})` : " nessun voto"}</small></span>
+            <div className="rmine"><small>Il tuo voto</small><Stars value={user.ratings?.[m.id] || 0} onRate={(v) => rate(m.id, v)} /></div>
+          </div>
+        )}
         <Clamp text={m.overview} lines={4} className="overview" />
         <TmdbCredit />
-        {m.type === "series" && (
+        {m.type === "series" && seasons.length > 0 && (
           <>
             <div className="chips">
               {seasons.map((s) => (
-                <button key={s.id} className={"chip" + (s.id === sid ? " on" : "")} onClick={() => setSid(s.id)}>{s.name || `Stagione ${s.number}`}</button>
+                <button key={s.id} className={"chip" + (s.id === sid ? " on" : "")} onClick={() => openSeason(s.id)}>{s.name || `Stagione ${s.number}`}</button>
               ))}
             </div>
+            {seasonEps.length > 0 && (
+              <button className="lnk markseen" onClick={() => setSeen(seasonDone ? [] : seasonEps.filter((e) => !seen(e.id)).map((e) => e.id), seasonDone ? seasonEps.map((e) => e.id) : [])}>
+                {seasonDone ? "Segna la stagione come non vista" : "Segna tutta la stagione come vista"}
+              </button>
+            )}
             {season && [...season.episodes].sort(byNum).map((e) => (
-              <div className="ep" key={e.id}>
+              <div className={"ep" + (next && e.id === next.id ? " next" : "")} key={e.id}>
                 <div className={"thumb" + (spoil(e) && hide !== "desc" ? " spoil" : "")} onClick={() => e.hasVideo && watch(m.id, e.id)}>
                   {e.cover || e.coverUrl ? <img src={imgUrl(e.cover) || e.coverUrl} alt="" loading="lazy" /> : <div className="ph"><I.Film size={22} /></div>}
                   {e.hasVideo && <span className="pl"><I.Play size={16} /></span>}
                   {seen(e.id) && <span className="seen"><I.Check size={12} /></span>}
                 </div>
                 <div className="ep-info">
-                  <b>{e.number}. {e.title || `Episodio ${e.number}`}</b>
+                  <b>{e.number}. {e.title || `Episodio ${e.number}`}{e.runtime > 0 && <small className="eprt"> · {fmtMin(e.runtime)}</small>}</b>
+                  {next && e.id === next.id && <span className="ntag">Prossimo da guardare</span>}
                   {spoil(e) && <button className="spoil-btn" onClick={() => unlock(e.id)}><I.Eye size={14} /> {hide === "cover" ? "Copertina nascosta" : hide === "desc" ? "Descrizione nascosta" : "Spoiler nascosto"} · tocca per mostrare</button>}
                   {e.overview && !(spoil(e) && hide !== "cover") && <Clamp text={e.overview} lines={2} />}
-                  <button className="lnk" onClick={() => toggle("watched", e.id)}>{seen(e.id) ? "Visto" : "Segna come visto"}</button>
+                  {e.hasVideo && <button className="lnk" onClick={() => toggle("watched", e.id)}>{seen(e.id) ? "Segna come non visto" : "Segna come visto"}</button>}
                 </div>
               </div>
             ))}
@@ -359,6 +432,34 @@ function MyRequests({ tick }) {
 }
 
 // ---------- PROFILO ----------
+// Guida all'uso del bot: ogni voce descrive una cosa che il bot fa davvero
+const GUIDE = [
+  ["Come guardo un titolo?", "Apri un film o una serie e premi Guarda. Il bot ti manda il video nella chat con lui e l'app si chiude da sola dopo un attimo: il video lo trovi lì, pronto da guardare. Nelle serie scegli prima l'episodio dalla lista."],
+  ["Mi dice di premere START", "La prima volta Telegram non permette al bot di scriverti finché non lo avvii. Apri la chat del bot e premi Start (oppure scrivi /start), poi torna nell'app e premi di nuovo Guarda."],
+  ["I pulsanti sotto il video", "⏭ Prossimo episodio (solo nelle serie) ti manda subito l'episodio successivo. Se era l'ultimo disponibile, il bot te lo dice. 📋 Catalogo riapre l'app."],
+  ["Devo essere iscritto al canale?", "Sì, per guardare i video bisogna essere iscritti al canale. Se non lo sei, l'app e il bot ti avvisano: iscriviti e tocca «Ho già fatto, controlla»."],
+  ["«Vai piano! Riprova tra poco»", "Per evitare abusi si possono chiedere solo alcuni video al minuto. Aspetta qualche secondo e riprova."],
+  ["Posso rivedere i video dopo?", "Sì: restano nella chat con il bot, quindi puoi rivederli anche senza aprire l'app. Se la protezione dei contenuti è attiva non si possono inoltrare né salvare."],
+  ["Il video non parte o è sbagliato", "Nella scheda del titolo tocca «Segnala un problema» e scegli il motivo: gli admin lo vedono subito. Quando lo risolviamo, il bot ti scrive. Trovi tutte le tue segnalazioni in Assistenza → Le mie richieste."],
+  ["Manca un titolo", "In Assistenza tocca «Richiedi un progetto» (puoi farne fino a 5 al giorno). Quando lo aggiungiamo il bot ti scrive e compare una notifica nel campanellino."],
+  ["Il bot mi scrive per le novità?", "No. Per titoli nuovi, episodi in arrivo e titoli della tua Lista usa il campanellino dentro l'app. Il bot ti scrive solo quando una tua richiesta o segnalazione viene completata."],
+  ["Condividere un titolo", "Nella scheda tocca l'icona di condivisione: chi riceve il link apre l'app direttamente su quel titolo."],
+  ["Comandi del bot", "/start riapre il menu con il pulsante per entrare nell'app."],
+];
+function BotGuide() {
+  const [open, setOpen] = useState(null);
+  return (
+    <div className="guide">
+      {GUIDE.map(([q, t], i) => (
+        <div key={q} className={"gq" + (open === i ? " on" : "")}>
+          <button aria-expanded={open === i} onClick={() => setOpen(open === i ? null : i)}><span>{q}</span><I.Chevron size={16} /></button>
+          {open === i && <p>{t}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
   const [wrap, setWrap] = useState(false);
   const [rep, setRep] = useState(false);
@@ -434,6 +535,8 @@ function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
               <span className="help-tx"><b>Vibrazione</b><small>Un leggero feedback quando tocchi, voti o segni un titolo come visto.</small></span>
               <span className={"sw" + (vib ? " on" : "")}><i /></span>
             </button>
+            <div className="set-h">Guida all'uso del bot</div>
+            <BotGuide />
           </div>
         )}
 
@@ -989,8 +1092,12 @@ export default function App() {
     );
   } else if (!boot.loading) {
     if (view.n === "home") {
-      const hero = media.find((m) => m.featured) || recent[0];
+      // titoli già disponibili e titoli "in arrivo" (aggiunti dall'admin) restano separati
+      const avail = recent.filter((m) => !isSoon(m));
+      const soonList = media.filter(isSoon).sort((x, y) => (x.soonDate || "9999").localeCompare(y.soonDate || "9999") || (y.createdAt || 0) - (x.createdAt || 0));
+      const hero = media.find((m) => m.featured) || avail[0];
       const roots = cats.filter((c) => !c.parentId);
+      const mine = media.filter((m) => user.watchlist.includes(m.id));
       body = (
         <div>
           {hero && (
@@ -998,37 +1105,46 @@ export default function App() {
               <div className="hshade" />
               <div className="hin">
                 <div className="pills">
-                  <span className="pill acc">In evidenza</span>
+                  <span className="pill acc">{isSoon(hero) ? "In arrivo" : "In evidenza"}</span>
                   <span className="pill">{hero.type === "movie" ? <I.Film size={13} /> : <I.Tv size={13} />} {kind(hero)}</span>
-                  {hero.year && <span className="pill">{hero.year}</span>}
+                  {isSoon(hero) ? <span className="pill">{soonInfo(hero).short}</span> : hero.year && <span className="pill">{hero.year}</span>}
                 </div>
                 <h1>{hero.title}</h1>
                 <p className="clamp">{hero.overview}</p>
                 <div className="actions">
-                  <button className="btn primary" onClick={(e) => { e.stopPropagation(); hero.type === "movie" ? watch(hero.id) : go({ n: "media", id: hero.id }); }}><I.Play size={18} /> Guarda</button>
+                  <button className="btn primary" onClick={(e) => { e.stopPropagation(); isSoon(hero) ? toggle("watchlist", hero.id) : hero.type === "movie" ? watch(hero.id) : go({ n: "media", id: hero.id }); }}>
+                    {isSoon(hero) ? <><I.Bookmark size={18} fill={user.watchlist.includes(hero.id) ? "currentColor" : "none"} /> {user.watchlist.includes(hero.id) ? "Ti avviseremo" : "Avvisami"}</> : <><I.Play size={18} /> Guarda</>}
+                  </button>
                   <button className="btn round" aria-label="Dettagli"><I.Info size={20} /></button>
-                  <button className="btn round" aria-label="Lista" onClick={(e) => { e.stopPropagation(); toggle("watchlist", hero.id); }}><I.Bookmark size={20} fill={user.watchlist.includes(hero.id) ? "currentColor" : "none"} /></button>
+                  {!isSoon(hero) && <button className="btn round" aria-label="Lista" onClick={(e) => { e.stopPropagation(); toggle("watchlist", hero.id); }}><I.Bookmark size={20} fill={user.watchlist.includes(hero.id) ? "currentColor" : "none"} /></button>}
                 </div>
               </div>
             </div>
           )}
           <div className="page">
+            {/* 1. le tue cose */}
             <Continue recent={user.recent} watched={user.watched} media={media} watch={watch} go={go} />
-            <TopRail items={(boot.trending || []).map((id) => media.find((m) => m.id === id)).filter(Boolean).slice(0, 10)} go={go} user={user} />
-            {roots.length > 0 && (
+            <Rail title="La mia lista" items={mine} go={go} user={user} />
+            {/* 2. in arrivo (lo gestisce l'admin) */}
+            {soonList.length > 0 && (
               <section className="blk">
-                <div className="sec"><h2>Categorie</h2></div>
-                <CatTiles home cats={roots} count={(id) => inCat(id).length} go={go} />
+                <div className="sec"><h2>In arrivo</h2></div>
+                <p className="sub2">Aggiungi alla Lista i titoli che aspetti: ti avvisiamo noi quando escono.</p>
+                <div className="rail">{soonList.slice(0, 12).map((m) => <Card key={m.id} m={m} go={go} extra={soonInfo(m).short} />)}</div>
               </section>
             )}
-            <Rail title="Ultime uscite" items={recent.slice(0, 12)} go={go} user={user} />
-            <Rail title="Film" items={recent.filter((m) => m.type === "movie")} go={go} user={user} />
-            <Rail title="Serie TV" items={recent.filter((m) => m.type === "series")} go={go} user={user} />
-            <Rail title="La mia lista" items={media.filter((m) => user.watchlist.includes(m.id))} go={go} user={user} />
+            {/* 3. da scoprire */}
+            <TopRail items={(boot.trending || []).map((id) => media.find((m) => m.id === id)).filter((m) => m && !isSoon(m)).slice(0, 10)} go={go} user={user} />
+            <Rail title="Ultime uscite" items={avail.slice(0, 12)} go={go} user={user} />
+            {/* 4. esplora */}
+            <section className="blk">
+              <div className="sec"><h2>Esplora</h2></div>
+              {roots.length > 0 && <CatTiles home cats={roots} count={(id) => inCat(id).length} go={go} />}
+            </section>
           </div>
         </div>
       );
-    } else if (view.n === "media" && find(view.id)) body = <Detail key={view.id + (view.season || "")} m={find(view.id)} user={user} me={me} watch={watch} toggle={toggle} say={say} rate={rate} unlock={unlock} initSeason={view.season} />;
+    } else if (view.n === "media" && find(view.id)) body = <Detail key={view.id + (view.season || "")} m={find(view.id)} user={user} me={me} watch={watch} toggle={toggle} say={say} rate={rate} unlock={unlock} setSeen={setSeen} initSeason={view.season} />;
     else if (view.n === "coll") body = <div className="page"><h1 className="ptitle">{view.title}</h1><Grid items={media.filter((m) => view.ids.includes(m.id)).sort(byRelease("asc"))} go={go} user={user} /></div>;
     else if (view.n === "cat") {
       const c = categories.find((x) => x.id === view.id);

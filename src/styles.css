@@ -446,3 +446,29 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .agroups .n{position:absolute;top:-6px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:#fff;color:#000;font:800 11px/18px system-ui,sans-serif}
 .chip .n{margin-left:6px;background:var(--red);color:#fff;border-radius:99px;padding:1px 6px;font-size:11px}
 .chip.on .n{background:#fff;color:var(--red)}
+
+/* ---------- scheda titolo, In arrivo, guida ---------- */
+.tag.soon{background:var(--red);color:#fff}
+.pbar{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.28)}
+.pbar i{display:block;height:100%;background:var(--red)}
+.card .cx{display:block;font-size:11px;color:var(--tx2);margin-top:2px}
+.sub2{margin:-4px 0 10px;font-size:13px;color:var(--tx2)}
+.soonbox{display:flex;flex-direction:column;gap:3px;margin:4px 0 12px;padding:12px 14px;border-radius:14px;background:rgba(227,22,28,.1);border:1px solid var(--red)}
+.soonbox b{color:var(--red);font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+.soonbox span{font-weight:700}
+.soonbox small{color:var(--tx2)}
+.pill.ok{background:rgba(46,160,67,.18);color:#5fd078}
+.markseen{display:block;margin:2px 0 10px}
+.prog{margin:2px 0 12px}
+.pbar2{height:6px;border-radius:99px;background:var(--s2);overflow:hidden}
+.pbar2 i{display:block;height:100%;background:var(--red);border-radius:99px}
+.prog small{display:block;margin-top:5px;color:var(--tx2);font-size:12px}
+.ep.next{border-left:3px solid var(--red);padding-left:8px}
+.ntag{display:inline-block;margin:2px 0 4px;padding:2px 8px;border-radius:99px;background:var(--red);color:#fff;font-size:11px;font-weight:700}
+.eprt{color:var(--tx2);font-weight:400}
+.guide{display:flex;flex-direction:column;gap:8px}
+.gq{background:var(--s1);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.gq button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:13px 14px;text-align:left;color:var(--tx);font-weight:600}
+.gq button svg{flex:none;transition:transform .2s}
+.gq.on button svg{transform:rotate(90deg)}
+.gq p{margin:0;padding:0 14px 14px;font-size:14px;line-height:1.5;color:var(--tx2)}
