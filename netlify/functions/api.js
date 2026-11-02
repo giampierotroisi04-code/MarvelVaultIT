@@ -165,12 +165,13 @@ async function syncNotifs(userId, db) {
   const first = !u.ninit; // primo avvio: si fissa la situazione attuale senza generare notifiche
   const add = (n) => { u.notifs = [{ id: uid(), at: now, ...n }, ...(u.notifs || [])]; dirty = true; };
 
-  const vis = db.media.filter((m) => m.visible !== false);
+  // i titoli "in arrivo" (finché non hanno un video) non contano come nuovi: lo diventano quando escono
+  const vis = db.media.filter((m) => m.visible !== false && !(m.soon && playable(m) === 0));
   if (!feed.shown) { feed.shown = Object.fromEntries(vis.map((m) => [m.id, 0])); feedDirty = true; }
   else for (const m of vis) if (!(m.id in feed.shown)) { feed.shown[m.id] = now; feedDirty = true; }
   if (first) u.nlast = now;
   else {
-    const fresh = vis.filter((m) => (feed.shown[m.id] || 0) > (u.nlast || 0));
+    const fresh = vis.filter((m) => (feed.shown[m.id] || 0) > (u.nlast || 0) && !(u.watchlist || []).includes(m.id)); // chi lo ha in Lista riceve già "è arrivato"
     if (fresh.length) { add({ type: "new", ids: fresh.slice(0, 8).map((m) => m.id), n: fresh.length }); u.nlast = now; }
   }
 
@@ -201,8 +202,8 @@ async function syncNotifs(userId, db) {
   return u;
 }
 // id dei titoli più guardati negli ultimi 7 giorni (solo visioni reali, admin esclusi), dal più visto
-const trendingIds = async () => {
-  const st = await getStats(), now = Date.now();
+const trendingIds = async (st0) => {
+  const st = st0 || (await getStats()), now = Date.now();
   const days = Array.from({ length: 7 }, (_, i) => toDay(now - i * 864e5));
   return Object.entries(st.media)
     .map(([id, x]) => [id, days.reduce((n, d) => n + (x.w?.[d] || 0), 0)])
@@ -650,15 +651,16 @@ const handler = async (req) => {
   if (a === "catalog") {
     const db = await getDb();
     const rt = (await store().get("ratings", { type: "json" })) || {};
+    const st = await getStats().catch(() => ({ media: {} }));
     return json({
-      media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
+      media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), views: st.media?.[m.id]?.s || 0, rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
       categories: db.categories.filter((x) => x.visible !== false),
       // novità con interruttore: "off" nascosta, "admin" solo admin (default; il Wrap parte nascosto), "all" tutti
       features: Object.fromEntries(["timeline", "doom", "stats", "wrap"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" ? "off" : "admin"); return [k, k === "stats" || k === "doom" || v === "all" || (v === "admin" && isAdmin)]; })), // statistiche e Doomsday sono sempre pubbliche
       timeline: db.timeline || [],
       timelineOut: db.timelineOut || [],
       doomsday: db.doomsday || { ids: [], minutes: {}, date: "2026-12-16" },
-      trending: await trendingIds().catch(() => []),
+      trending: await trendingIds(st).catch(() => []),
       user: await syncNotifs(user.id, db),
     });
   }
