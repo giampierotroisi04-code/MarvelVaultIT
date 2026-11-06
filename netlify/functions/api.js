@@ -70,6 +70,7 @@ function checkInitData(initData) {
 }
 
 // ---------- Telegram ----------
+const wrapLast = new Map(); // anti-abuso invio foto Wrapped (in memoria, best effort)
 const tg = (method, body) =>
   fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`, {
     method: "POST",
@@ -164,6 +165,7 @@ async function syncNotifs(userId, db) {
   let dirty = false, feedDirty = false;
   const first = !u.ninit; // primo avvio: si fissa la situazione attuale senza generare notifiche
   const add = (n) => { u.notifs = [{ id: uid(), at: now, ...n }, ...(u.notifs || [])]; dirty = true; };
+  const nf = (k) => u.settings?.[k] !== false; // notifiche scelte in Impostazioni (default: tutte attive)
 
   // i titoli "in arrivo" (finché non hanno un video) non contano come nuovi: lo diventano quando escono
   const vis = db.media.filter((m) => m.visible !== false && !(m.soon && playable(m) === 0));
@@ -172,7 +174,7 @@ async function syncNotifs(userId, db) {
   if (first) u.nlast = now;
   else {
     const fresh = vis.filter((m) => (feed.shown[m.id] || 0) > (u.nlast || 0) && !(u.watchlist || []).includes(m.id)); // chi lo ha in Lista riceve già "è arrivato"
-    if (fresh.length) { add({ type: "new", ids: fresh.slice(0, 8).map((m) => m.id), n: fresh.length }); u.nlast = now; }
+    if (fresh.length) { if (nf("notifNew")) add({ type: "new", ids: fresh.slice(0, 8).map((m) => m.id), n: fresh.length }); u.nlast = now; }
   }
 
   u.nbase = u.nbase || {};
@@ -181,7 +183,7 @@ async function syncNotifs(userId, db) {
     if (!m) continue;
     const cur = playable(m);
     if (!(id in u.nbase)) { u.nbase[id] = cur; dirty = true; continue; }
-    if (cur > u.nbase[id]) add({ type: "arrived", mediaId: id, n: cur - u.nbase[id], fresh: u.nbase[id] === 0 });
+    if (cur > u.nbase[id] && nf("notifList")) add({ type: "arrived", mediaId: id, n: cur - u.nbase[id], fresh: u.nbase[id] === 0 });
     if (cur !== u.nbase[id]) { u.nbase[id] = cur; dirty = true; }
   }
 
@@ -190,7 +192,7 @@ async function syncNotifs(userId, db) {
   for (const r of mine) {
     if (u.ndone.includes(r.id)) continue;
     u.ndone.push(r.id); dirty = true;
-    if (!first) add(r.k === "request" ? { type: "request", text: r.text } : { type: "report", title: r.title, episodeLabel: r.episodeLabel || "" });
+    if (!first && nf(r.k === "request" ? "notifRequest" : "notifReport")) add(r.k === "request" ? { type: "request", text: r.text } : { type: "report", title: r.title, episodeLabel: r.episodeLabel || "" });
   }
   u.ndone = u.ndone.slice(-300);
 
@@ -671,12 +673,31 @@ const handler = async (req) => {
     let val;
     if (key === "antispoiler") val = !!value;
     else if (key === "haptics") val = !!value;
+    else if (["notifNew", "notifList", "notifRequest", "notifReport"].includes(key)) val = !!value;
     else if (key === "spoilerHide" && ["cover", "desc", "both"].includes(value)) val = value;
     else return json({ error: "bad request" }, 400);
     const u = await getUser(user.id);
     u.settings = { ...(u.settings || {}), [key]: val };
     await store().setJSON(`user:${user.id}`, u);
     return json(u);
+  }
+
+  // foto del Wrapped: l'app la crea sul telefono, il bot la manda nella chat (da lì si salva o si inoltra)
+  if (a === "wrapped-photo" && req.method === "POST") {
+    const { image } = await req.json().catch(() => ({}));
+    const raw = String(image || "");
+    const m = raw.length < 4_500_000 && /^data:image\/(jpeg|png);base64,([A-Za-z0-9+/=]+)$/.exec(raw);
+    if (!m) return json({ error: "bad request" }, 400);
+    const t = Date.now();
+    if (t - (wrapLast.get(user.id) || 0) < 8000) return json({ error: "rate" }, 429);
+    wrapLast.set(user.id, t);
+    const fd = new FormData();
+    fd.append("chat_id", String(user.id));
+    fd.append("photo", new Blob([Buffer.from(m[2], "base64")], { type: "image/" + m[1] }), "mcu-wrapped." + (m[1] === "png" ? "png" : "jpg"));
+    fd.append("caption", "Il tuo MCU Wrapped 🔥 Salvalo o inoltralo a chi vuoi!");
+    const r = await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendPhoto`, { method: "POST", body: fd }).then((x) => x.json()).catch(() => ({ ok: false }));
+    if (!r.ok) return json({ error: r.error_code === 403 ? "start_required" : "send_failed" }, 400);
+    return json({ ok: true });
   }
 
   // episodi con spoiler sbloccati a mano: restano sbloccati
@@ -1011,7 +1032,8 @@ const handler = async (req) => {
       const inbox = await getInbox();
       const it = (kind === "report" ? inbox.reports : inbox.requests).find((x) => x.id === id);
       if (!it || !["open", "done"].includes(status)) return json({ error: "not_found" }, 404);
-      if (status === "done" && it.status !== "done")
+      const target = status === "done" && it.status !== "done" ? await getUser(it.userId).catch(() => ({})) : null;
+      if (target && target.settings?.[kind === "report" ? "notifReport" : "notifRequest"] !== false)
         await tg("sendMessage", { chat_id: it.userId, text: kind === "report" ? `Abbiamo risolto la segnalazione su "${it.title}". Grazie!` : `Il titolo che hai richiesto, "${it.text}", è stato aggiunto. Cercalo nell'app!` }).catch(() => {});
       it.status = status;
       await saveInbox(inbox);
