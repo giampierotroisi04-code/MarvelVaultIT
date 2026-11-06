@@ -154,6 +154,16 @@ const Header = ({ onSearch, onBell, unread = 0 }) => (
   </header>
 );
 
+// Quali notifiche ricevere (Impostazioni → Notifiche). Di default sono tutte attive.
+const NOTIFS = [
+  ["notifNew", "Nuovi titoli", "Quando viene aggiunto un film o una serie al catalogo."],
+  ["notifList", "Titoli della tua Lista", "Quando un titolo che aspettavi esce o ha nuovi episodi."],
+  ["notifRequest", "Richieste completate", "Quando aggiungiamo un titolo che hai richiesto (anche con un messaggio del bot)."],
+  ["notifReport", "Segnalazioni risolte", "Quando risolviamo un problema che hai segnalato (anche con un messaggio del bot)."],
+];
+const NOTIF_KEY = { new: "notifNew", arrived: "notifList", request: "notifRequest", report: "notifReport" };
+const notifOn = (user, type) => user.settings?.[NOTIF_KEY[type]] !== false;
+
 const ago = (t) => {
   const s = (Date.now() - t) / 1000;
   if (s < 60) return "ora";
@@ -442,7 +452,7 @@ const GUIDE = [
   ["Posso rivedere i video dopo?", "Sì: restano nella chat con il bot, quindi puoi rivederli anche senza aprire l'app. Se la protezione dei contenuti è attiva non si possono inoltrare né salvare."],
   ["Il video non parte o è sbagliato", "Nella scheda del titolo tocca «Segnala un problema» e scegli il motivo: gli admin lo vedono subito. Quando lo risolviamo, il bot ti scrive. Trovi tutte le tue segnalazioni in Assistenza → Le mie richieste."],
   ["Manca un titolo", "In Assistenza tocca «Richiedi un progetto» (puoi farne fino a 5 al giorno). Quando lo aggiungiamo il bot ti scrive e compare una notifica nel campanellino."],
-  ["Il bot mi scrive per le novità?", "No. Per titoli nuovi, episodi in arrivo e titoli della tua Lista usa il campanellino dentro l'app. Il bot ti scrive solo quando una tua richiesta o segnalazione viene completata."],
+  ["Il bot mi scrive per le novità?", "No. Per titoli nuovi, episodi in arrivo e titoli della tua Lista usa il campanellino dentro l'app. Il bot ti scrive solo quando una tua richiesta o segnalazione viene completata. In Impostazioni → Notifiche scegli quali avvisi ricevere."],
   ["Condividere un titolo", "Nella scheda tocca l'icona di condivisione: chi riceve il link apre l'app direttamente su quel titolo."],
   ["Comandi del bot", "/start riapre il menu con il pulsante per entrare nell'app."],
 ];
@@ -460,7 +470,7 @@ function BotGuide() {
   );
 }
 
-function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
+function ProfilePage({ media, user, me, categories = [], features = {}, go, say, setSetting }) {
   const [wrap, setWrap] = useState(false);
   const [rep, setRep] = useState(false);
   const [req, setReq] = useState(false);
@@ -508,7 +518,7 @@ function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
           ? <Grid items={list} go={go} user={user} />
           : <div className="prof-empty"><I.Bookmark size={28} /><b>La tua lista è vuota</b><p>Salva film e serie con il segnalibro per ritrovarli qui.</p></div>)}
 
-        {tab === "stats" && <StatsView media={media} user={user} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />}
+        {tab === "stats" && <StatsView media={media} user={user} categories={categories} wrapOn={!!features.wrap} openWrap={() => setWrap(true)} />}
 
         {tab === "settings" && (
           <div className="prof-help">
@@ -530,6 +540,17 @@ function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
                 <p className="hint">Gli episodi che sblocchi con un tocco restano sbloccati.</p>
               </>
             )}
+            <div className="set-h">Notifiche</div>
+            <p className="hint">Scegli quali avvisi ricevere nel campanellino. Quelli che spegni non arrivano né nell'app né dal bot.</p>
+            {NOTIFS.map(([k, l, d]) => {
+              const on = user.settings?.[k] !== false;
+              return (
+                <button key={k} className="set-row" role="switch" aria-checked={on} onClick={() => { setSetting(k, !on); haptic.selectionChanged?.(); }}>
+                  <span className="help-tx"><b>{l}</b><small>{d}</small></span>
+                  <span className={"sw" + (on ? " on" : "")}><i /></span>
+                </button>
+              );
+            })}
             <div className="set-h">Generale</div>
             <button className="set-row" role="switch" aria-checked={vib} onClick={() => { setSetting("haptics", !vib); if (!vib) tg?.HapticFeedback?.impactOccurred?.("medium"); }}>
               <span className="help-tx"><b>Vibrazione</b><small>Un leggero feedback quando tocchi, voti o segni un titolo come visto.</small></span>
@@ -558,7 +579,7 @@ function ProfilePage({ media, user, me, features = {}, go, say, setSetting }) {
       </div>
 
       <TmdbCredit />
-      {wrap && features.wrap && <WrapView media={media} user={user} me={me} onClose={() => setWrap(false)} />}
+      {wrap && features.wrap && <WrapView media={media} user={user} me={me} categories={categories} onClose={() => setWrap(false)} />}
       {rep && <ReportSheet media={media} say={say} onClose={() => { setRep(false); setTick((t) => t + 1); }} />}
       {req && <RequestSheet say={say} onClose={() => { setReq(false); setTick((t) => t + 1); }} />}
     </div>
@@ -990,7 +1011,7 @@ export default function App() {
 
   const { media = [], categories = [], timeline = [], timelineOut = [], doomsday, features = {}, user = { watchlist: [], watched: [] }, me } = boot;
   hapticOn = user.settings?.haptics !== false;
-  const notifs = user.notifs || [];
+  const notifs = (user.notifs || []).filter((n) => notifOn(user, n.type));
   const unread = notifs.filter((n) => n.at > (user.nread || 0)).length;
   const openBell = () => {
     setBell({ prev: user.nread || 0 });
@@ -1097,7 +1118,6 @@ export default function App() {
       const soonList = media.filter(isSoon).sort((x, y) => (x.soonDate || "9999").localeCompare(y.soonDate || "9999") || (y.createdAt || 0) - (x.createdAt || 0));
       const hero = media.find((m) => m.featured) || avail[0];
       const roots = cats.filter((c) => !c.parentId);
-      const mine = media.filter((m) => user.watchlist.includes(m.id));
       body = (
         <div>
           {hero && (
@@ -1122,10 +1142,10 @@ export default function App() {
             </div>
           )}
           <div className="page">
-            {/* 1. le tue cose */}
+            {/* ordine: in evidenza (sopra) · continua a guardare · più visti · ultime uscite · in arrivo · esplora */}
             <Continue recent={user.recent} watched={user.watched} media={media} watch={watch} go={go} />
-            <Rail title="La mia lista" items={mine} go={go} user={user} />
-            {/* 2. in arrivo (lo gestisce l'admin) */}
+            <TopRail items={(boot.trending || []).map((id) => media.find((m) => m.id === id)).filter((m) => m && !isSoon(m)).slice(0, 10)} go={go} user={user} />
+            <Rail title="Ultime uscite" items={avail.slice(0, 12)} go={go} user={user} />
             {soonList.length > 0 && (
               <section className="blk">
                 <div className="sec"><h2>In arrivo</h2></div>
@@ -1133,11 +1153,7 @@ export default function App() {
                 <div className="rail">{soonList.slice(0, 12).map((m) => <Card key={m.id} m={m} go={go} extra={soonInfo(m).short} />)}</div>
               </section>
             )}
-            {/* 3. da scoprire */}
-            <TopRail items={(boot.trending || []).map((id) => media.find((m) => m.id === id)).filter((m) => m && !isSoon(m)).slice(0, 10)} go={go} user={user} />
-            <Rail title="Ultime uscite" items={avail.slice(0, 12)} go={go} user={user} />
-            {/* 4. esplora */}
-            <section className="blk">
+                        <section className="blk">
               <div className="sec"><h2>Esplora</h2></div>
               {roots.length > 0 && <CatTiles home cats={roots} count={(id) => inCat(id).length} go={go} />}
             </section>
@@ -1166,7 +1182,7 @@ export default function App() {
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
     else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} />;
     else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} toggle={toggle} setSeen={setSeen} />;
-    else if (view.n === "profile" || view.n === "list" || view.n === "stats") body = <ProfilePage media={media} user={user} me={me} features={features} go={go} say={say} setSetting={setSetting} />;
+    else if (view.n === "profile" || view.n === "list" || view.n === "stats") body = <ProfilePage media={media} user={user} me={me} categories={categories} features={features} go={go} say={say} setSetting={setSetting} />;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 
