@@ -1,16 +1,17 @@
-// Crea la "foto" del Wrapped (1080x1920, formato storie) con un canvas, tutta sul telefono.
+// Crea la "foto" del Wrapped (1920x1080) con un canvas, tutta sul telefono.
+// Sinistra: il profilo dell'utente. Destra: le statistiche. Grafica identica al sito (nero, riquadri scuri, tricolore, Bebas Neue).
 import { fmtHours, fmt1 } from "./stats.js";
 
-const W = 1080, H = 1920;
-const RED = "#E3161C", GREEN = "#009246";
+const W = 1920, H = 1080;
+const RED = "#E3161C", GREEN = "#009246", S1 = "#0e0e10", S2 = "#1a1a1d", BD = "rgba(255,255,255,.16)", MUTED = "#a8a8b3";
 const BEBAS = '"Bebas Neue", Impact, sans-serif';
-const INTER = 'Inter, system-ui, sans-serif';
+const INTER = "Inter, system-ui, sans-serif";
 
 const loadImg = (src) =>
   new Promise((res) => {
     if (!src) return res(null);
     const im = new Image();
-    im.crossOrigin = "anonymous"; // se il server non lo permette l'immagine non carica: niente canvas "sporco"
+    im.crossOrigin = "anonymous";
     im.onload = () => res(im);
     im.onerror = () => res(null);
     im.src = src;
@@ -31,10 +32,10 @@ const rr = (c, x, y, w, h, r) => {
   c.closePath();
 };
 
-// scrive il testo rimpicciolendolo finché sta nella larghezza data
+// imposta il font rimpicciolendolo finché il testo sta nella larghezza data
 const fit = (c, text, maxW, size, weight, family) => {
   let sz = size;
-  do { c.font = `${weight} ${sz}px ${family}`; sz -= 2; } while (c.measureText(text).width > maxW && sz > 18);
+  do { c.font = `${weight} ${sz}px ${family}`; sz -= 2; } while (c.measureText(text).width > maxW && sz > 16);
 };
 
 const T = (c, s, x, y, { font, color = "#fff", align = "left", ls = 0 }) => {
@@ -43,30 +44,17 @@ const T = (c, s, x, y, { font, color = "#fff", align = "left", ls = 0 }) => {
   c.fillText(s, x, y);
   if ("letterSpacing" in c) c.letterSpacing = "0px";
 };
+// testo che si adatta alla larghezza
+const TF = (c, s, x, y, maxW, size, weight, family, color = "#fff", align = "left") => {
+  fit(c, s, maxW, size, weight, family);
+  c.fillStyle = color; c.textAlign = align; c.textBaseline = "alphabetic";
+  c.fillText(s, x, y);
+};
 
-const gem = (c, cx, cy, r, color, on) => {
-  const pts = [[0, -1], [0.85, -0.4], [0.6, 0.9], [-0.6, 0.9], [-0.85, -0.4]];
-  c.save();
-  c.translate(cx, cy);
-  c.beginPath();
-  pts.forEach(([x, y], i) => (i ? c.lineTo(x * r, y * r) : c.moveTo(x * r, y * r)));
-  c.closePath();
-  if (on) { c.shadowColor = color; c.shadowBlur = 30; c.fillStyle = color; }
-  else c.fillStyle = "rgba(255,255,255,.05)";
-  c.fill();
-  c.shadowBlur = 0;
-  c.lineJoin = "round";
-  c.lineWidth = 3;
-  c.strokeStyle = on ? "#fff" : "rgba(255,255,255,.28)";
-  c.stroke();
-  c.beginPath();
-  c.moveTo(-0.85 * r, -0.4 * r); c.lineTo(0.85 * r, -0.4 * r);
-  c.moveTo(0, -r); c.lineTo(-0.3 * r, -0.4 * r); c.lineTo(-0.2 * r, 0.9 * r);
-  c.moveTo(0, -r); c.lineTo(0.3 * r, -0.4 * r); c.lineTo(0.2 * r, 0.9 * r);
-  c.lineWidth = 2;
-  c.strokeStyle = on ? "rgba(255,255,255,.55)" : "rgba(255,255,255,.14)";
-  c.stroke();
-  c.restore();
+const panel = (c, x, y, w, h, fill = S1) => {
+  rr(c, x, y, w, h, 34);
+  c.fillStyle = fill; c.fill();
+  c.lineWidth = 2; c.strokeStyle = BD; c.stroke();
 };
 
 const toBlob = (canvas) =>
@@ -74,88 +62,106 @@ const toBlob = (canvas) =>
     try { canvas.toBlob((b) => (b ? res(b) : rej(new Error("blob"))), "image/jpeg", 0.92); } catch (e) { rej(e); }
   });
 
-// o = { s (statistiche), name, year, bot, logo, bgUrl }
+// o = { s (statistiche), name, year, bot, logo, avatar }
 export async function makeWrapImage(o) {
-  try { await Promise.all([document.fonts.load(`170px ${BEBAS}`), document.fonts.load(`800 40px ${INTER}`)]); } catch {}
-  const [logo, bg] = await Promise.all([loadImg(o.logo), loadImg(o.bgUrl)]);
+  try { await Promise.all([document.fonts.load(`100px ${BEBAS}`), document.fonts.load(`800 40px ${INTER}`), document.fonts.load(`600 30px ${INTER}`)]); } catch {}
+  const [logo, avatar] = await Promise.all([loadImg(o.logo), loadImg(o.avatar)]);
   const { s } = o;
 
-  const draw = (useBg) => {
+  const draw = (useAvatar) => {
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     const c = canvas.getContext("2d");
 
-    // sfondo: nero, oppure la locandina del titolo preferito molto scurita
+    // sfondo come il sito: nero con aloni rosso e verde
     c.fillStyle = "#000"; c.fillRect(0, 0, W, H);
-    if (useBg && bg) { cover(c, bg, 0, 0, W, H); c.fillStyle = "rgba(0,0,0,.76)"; c.fillRect(0, 0, W, H); }
-    let g = c.createRadialGradient(W / 2, 0, 0, W / 2, 0, 1000);
-    g.addColorStop(0, "rgba(227,22,28,.5)"); g.addColorStop(1, "rgba(227,22,28,0)");
+    let g = c.createRadialGradient(0, 0, 0, 0, 0, 1000);
+    g.addColorStop(0, "rgba(227,22,28,.38)"); g.addColorStop(1, "rgba(227,22,28,0)");
     c.fillStyle = g; c.fillRect(0, 0, W, H);
-    g = c.createRadialGradient(W / 2, H, 0, W / 2, H, 900);
-    g.addColorStop(0, "rgba(0,146,70,.4)"); g.addColorStop(1, "rgba(0,146,70,0)");
+    g = c.createRadialGradient(W, H, 0, W, H, 1000);
+    g.addColorStop(0, "rgba(0,146,70,.3)"); g.addColorStop(1, "rgba(0,146,70,0)");
     c.fillStyle = g; c.fillRect(0, 0, W, H);
 
     // tricolore in alto e in basso
-    for (const y of [0, H - 16]) {
-      c.fillStyle = GREEN; c.fillRect(0, y, W / 3, 16);
-      c.fillStyle = "#fff"; c.fillRect(W / 3, y, W / 3, 16);
-      c.fillStyle = RED; c.fillRect((W / 3) * 2, y, W / 3, 16);
+    for (const y of [0, H - 12]) {
+      c.fillStyle = GREEN; c.fillRect(0, y, W / 3, 12);
+      c.fillStyle = "#fff"; c.fillRect(W / 3, y, W / 3, 12);
+      c.fillStyle = RED; c.fillRect((W / 3) * 2, y, W / 3, 12);
     }
 
-    // intestazione
-    if (logo) {
-      c.save(); c.beginPath(); c.arc(114, 120, 54, 0, Math.PI * 2); c.clip(); cover(c, logo, 60, 66, 108, 108); c.restore();
+    // intestazione: logo a sinistra, titolo a destra
+    if (logo) { c.save(); c.beginPath(); c.arc(104, 98, 44, 0, Math.PI * 2); c.clip(); cover(c, logo, 60, 54, 88, 88); c.restore(); }
+    T(c, "Marvel Italia", 166, 96, { font: `800 38px ${INTER}` });
+    T(c, "STREAMING", 166, 130, { font: `700 20px ${INTER}`, color: RED, ls: 7 });
+    c.font = `100px ${BEBAS}`;
+    const yw = c.measureText(String(o.year)).width;
+    T(c, String(o.year), W - 60, 128, { font: `100px ${BEBAS}`, color: RED, align: "right" });
+    T(c, "MCU WRAPPED", W - 60 - yw - 22, 128, { font: `100px ${BEBAS}`, align: "right" });
+
+    // ---------- SINISTRA: l'utente ----------
+    panel(c, 60, 180, 620, 790);
+    const cx = 370, cy = 345;
+    [GREEN, "#fff", RED].forEach((col, i) => {
+      const a0 = -Math.PI / 2 + (i * 2 * Math.PI) / 3 + 0.07;
+      c.beginPath(); c.arc(cx, cy, 128, a0, a0 + (2 * Math.PI) / 3 - 0.14);
+      c.lineWidth = 8; c.lineCap = "round"; c.strokeStyle = col; c.stroke();
+    });
+    c.lineCap = "butt";
+    if (useAvatar && avatar) {
+      c.save(); c.beginPath(); c.arc(cx, cy, 108, 0, Math.PI * 2); c.clip(); cover(c, avatar, cx - 108, cy - 108, 216, 216); c.restore();
+    } else {
+      c.beginPath(); c.arc(cx, cy, 108, 0, Math.PI * 2); c.fillStyle = RED; c.fill();
+      T(c, (o.name.replace("@", "")[0] || "?").toUpperCase(), cx, cy + 42, { font: `130px ${BEBAS}`, align: "center" });
     }
-    T(c, "Marvel Italia", 190, 118, { font: `800 44px ${INTER}` });
-    T(c, "STREAMING", 190, 158, { font: `700 22px ${INTER}`, color: RED, ls: 8 });
+    TF(c, o.name, cx, 530, 540, 46, 800, INTER, "#fff", "center");
+    c.fillStyle = BD; c.fillRect(100, 566, 540, 2);
 
-    // titolo
-    fit(c, "MCU WRAPPED", 960, 170, 400, BEBAS);
-    c.fillStyle = "#fff"; c.textAlign = "left"; c.fillText("MCU WRAPPED", 60, 420);
-    fit(c, String(o.year), 960, 320, 400, BEBAS);
-    c.fillStyle = RED; c.fillText(String(o.year), 60, 690);
-    fit(c, `di ${o.name}`, 960, 38, 700, INTER);
-    c.fillStyle = "#cfcfd8"; c.textAlign = "left"; c.fillText(`di ${o.name}`, 60, 765);
+    T(c, "IL TUO PREFERITO", 100, 620, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
+    TF(c, s.best.length ? s.best[0].m.title.toUpperCase() : "—", 100, 685, 540, 68, 400, BEBAS, "#fff");
+    T(c, "PIÙ RIVISTO", 100, 745, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
+    TF(c, s.top.length ? s.top[0].m.title.toUpperCase() : "—", 100, 810, 540, 68, 400, BEBAS, "#fff");
+    T(c, "STREAK ATTUALE", 100, 868, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
+    TF(c, `${s.streak} ${s.streak === 1 ? "GIORNO" : "GIORNI"}`, 100, 925, 540, 56, 400, BEBAS, "#fff");
 
-    // ore viste
-    T(c, "ORE VISTE", 60, 880, { font: `700 28px ${INTER}`, color: "#a8a8b3", ls: 6 });
-    fit(c, fmtHours(s.minutes), 960, 230, 400, BEBAS);
-    c.fillStyle = "#fff"; c.textAlign = "left"; c.fillText(fmtHours(s.minutes), 60, 1075);
+    // ---------- DESTRA: le statistiche ----------
+    panel(c, 720, 180, 1140, 790);
+    T(c, "ORE VISTE", 770, 248, { font: `700 22px ${INTER}`, color: MUTED, ls: 6 });
+    TF(c, fmtHours(s.minutes), 770, 440, 600, 230, 400, BEBAS, "#fff");
     const sub = s.endgames >= 0.1 ? `= ${fmt1(s.endgames)} maratone di Avengers: Endgame` : `${s.views} ${s.views === 1 ? "visione" : "visioni"} in totale`;
-    fit(c, sub, 960, 34, 600, INTER);
-    c.fillStyle = "#d4d4dc"; c.fillText(sub, 60, 1138);
+    TF(c, sub, 770, 495, 600, 30, 600, INTER, "#d4d4dc");
 
-    // grado + eroe
-    rr(c, 60, 1190, 960, 170, 26);
-    c.fillStyle = "rgba(0,0,0,.45)"; c.fill();
-    c.lineWidth = 3; c.strokeStyle = RED; c.stroke();
-    T(c, "GRADO", 92, 1245, { font: `700 22px ${INTER}`, color: RED, ls: 5 });
-    fit(c, s.rank.name.toUpperCase(), 430, 74, 400, BEBAS);
-    c.fillStyle = "#fff"; c.textAlign = "left"; c.fillText(s.rank.name.toUpperCase(), 92, 1325);
-    T(c, "EROE", 988, 1245, { font: `700 22px ${INTER}`, color: RED, align: "right", ls: 5 });
-    fit(c, s.hero.name.toUpperCase(), 430, 74, 400, BEBAS);
-    c.fillStyle = "#fff"; c.textAlign = "right"; c.fillText(s.hero.name.toUpperCase(), 988, 1325);
+    // film e serie visti (a destra delle ore)
+    [[String(s.filmsSeen), "film visti", 305], [String(s.seriesSeen), "serie viste", 445]].forEach(([v, l, y]) => {
+      TF(c, v, 1420, y, 200, 96, 400, BEBAS, "#fff");
+      T(c, l.toUpperCase(), 1420, y + 34, { font: `700 18px ${INTER}`, color: MUTED, ls: 3 });
+    });
 
-    // quattro riquadri
+    // sei riquadri
     const tiles = [
       [String(s.seen), "progetti visti"],
       [`${s.bestStreak} ${s.bestStreak === 1 ? "giorno" : "giorni"}`, "streak record"],
       [`${s.pct}%`, "catalogo completato"],
       [s.ratedCount ? `${s.avg}/5` : "—", "media dei tuoi voti"],
+      [String(s.views), "visioni totali"],
+      [String(s.activeDays), "giorni attivi"],
     ];
     tiles.forEach(([v, l], i) => {
-      const x = 60 + (i % 2) * 492, y = 1390 + Math.floor(i / 2) * 164;
-      rr(c, x, y, 468, 140, 22);
-      c.fillStyle = "rgba(255,255,255,.07)"; c.fill();
-      c.lineWidth = 2; c.strokeStyle = "rgba(255,255,255,.18)"; c.stroke();
-      fit(c, v, 420, 84, 400, BEBAS);
-      c.fillStyle = "#fff"; c.textAlign = "left"; c.fillText(v, x + 26, y + 84);
-      T(c, l.toUpperCase(), x + 26, y + 120, { font: `700 20px ${INTER}`, color: "#a8a8b3", ls: 3 });
+      const x = 770 + (i % 3) * 355, y = 545 + Math.floor(i / 3) * 160;
+      rr(c, x, y, 330, 138, 22);
+      c.fillStyle = S2; c.fill();
+      c.lineWidth = 2; c.strokeStyle = BD; c.stroke();
+      TF(c, v, x + 26, y + 82, 280, 80, 400, BEBAS, "#fff");
+      T(c, l.toUpperCase(), x + 26, y + 118, { font: `700 17px ${INTER}`, color: MUTED, ls: 3 });
     });
 
-    // gemme dell'infinito
-    s.stones.forEach((st, i) => gem(c, 140 + i * 160, 1785, 42, st.color, st.on));
-    T(c, `${s.stonesOn}/6 GEMME DELL'INFINITO · t.me/${o.bot || ""}`, W / 2, 1868, { font: `700 24px ${INTER}`, color: "#cfcfd8", align: "center", ls: 3 });
+    // frase meme
+    rr(c, 770, 872, 1040, 70, 18);
+    c.fillStyle = "rgba(227,22,28,.12)"; c.fill();
+    c.lineWidth = 2; c.strokeStyle = "rgba(227,22,28,.55)"; c.stroke();
+    c.fillStyle = RED; c.fillRect(770, 886, 6, 42);
+    TF(c, s.memes.card, 800, 917, 990, 30, 600, INTER, "#fff");
+
+    T(c, `t.me/${o.bot || ""}`, W / 2, 1040, { font: `600 22px ${INTER}`, color: MUTED, align: "center", ls: 2 });
     return canvas;
   };
 

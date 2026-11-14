@@ -648,6 +648,25 @@ function Vis({ k, features = {}, say, onDone, label = "Visibilità", def = "admi
   );
 }
 
+// ---------- BuyMeACoffee: indirizzo e testo ----------
+function Coffee({ coffee = {}, say, onDone }) {
+  const [url, setUrl] = useState(coffee.url || "");
+  const [text, setText] = useState(coffee.text || "");
+  const save = async () => {
+    try { await api("admin/coffee", { body: { url, text } }); say("Salvato"); onDone?.(); }
+    catch (e) { alert(e.data?.error === "bad url" ? "Il link deve iniziare con https://" : "Errore"); }
+  };
+  return (
+    <div className="box">
+      <b>BuyMeACoffee</b>
+      <input placeholder="Link (https://buymeacoffee.com/tuonome)" value={url} onChange={(e) => setUrl(e.target.value)} />
+      <input placeholder="Testo (es. Offrici un caffè)" maxLength={60} value={text} onChange={(e) => setText(e.target.value)} />
+      <button className="btn small" onClick={save}>Salva</button>
+      <p className="hint">Compare come card piccola in fondo alla Home e come riga in Impostazioni. Gli utenti possono chiuderla (torna dopo 7 giorni).</p>
+    </div>
+  );
+}
+
 // ---------- Road to Doomsday ----------
 function DoomAdmin({ media, doom = {}, q = "", say, onDone }) {
   const [ids, setIds] = useState(doom.ids || []);
@@ -902,7 +921,7 @@ export default function Admin({ say, onChange }) {
     if (tab === "cats") return <Cats cats={db.categories} media={db.media} reload={reload} />;
     if (tab === "stats") return <Stats />;
     if (tab === "credits") return <Credits say={say} />;
-    if (tab === "features") return <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /></>;
+    if (tab === "features") return <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Vis k="coffee" label="Card BuyMeACoffee" def="off" features={db.features} say={say} onDone={reload} /><Coffee coffee={db.coffee} say={say} onDone={reload} /></>;
     if (tab === "titles") return <><Runtimes media={db.media} say={say} onDone={reload} /><TmdbDates say={say} onDone={reload} /></>;
     if (tab === "bot") return <><Backup say={say} /><Anniv say={say} /></>;
     if (tab === "timeline") return <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></>;

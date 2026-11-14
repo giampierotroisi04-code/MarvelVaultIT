@@ -654,11 +654,13 @@ const handler = async (req) => {
     const db = await getDb();
     const rt = (await store().get("ratings", { type: "json" })) || {};
     const st = await getStats().catch(() => ({ media: {} }));
+    const feats = Object.fromEntries(["timeline", "doom", "stats", "wrap", "coffee"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" || k === "coffee" ? "off" : "admin"); return [k, k === "stats" || k === "doom" || v === "all" || (v === "admin" && isAdmin)]; })); // statistiche e Doomsday sono sempre pubbliche
     return json({
       media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), views: st.media?.[m.id]?.s || 0, rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
       categories: db.categories.filter((x) => x.visible !== false),
-      // novità con interruttore: "off" nascosta, "admin" solo admin (default; il Wrap parte nascosto), "all" tutti
-      features: Object.fromEntries(["timeline", "doom", "stats", "wrap"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" ? "off" : "admin"); return [k, k === "stats" || k === "doom" || v === "all" || (v === "admin" && isAdmin)]; })), // statistiche e Doomsday sono sempre pubbliche
+      // novità con interruttore: "off" nascosta, "admin" solo admin (default; Wrap e Caffè partono nascosti), "all" tutti
+      features: feats,
+      coffee: feats.coffee && /^https:\/\//.test(db.coffee?.url || "") ? { url: db.coffee.url, text: db.coffee.text || "" } : null, // BuyMeACoffee
       timeline: db.timeline || [],
       timelineOut: db.timelineOut || [],
       doomsday: db.doomsday || { ids: [], minutes: {}, date: "2026-12-16" },
@@ -1110,9 +1112,21 @@ const handler = async (req) => {
 
     if (b === "features" && req.method === "POST") {
       const { key, value } = await req.json();
-      if (!["timeline", "doom", "stats", "wrap"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
+      if (!["timeline", "doom", "stats", "wrap", "coffee"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
       const db = await getDb();
       db.features = { ...(db.features || {}), [key]: value };
+      await saveDb(db);
+      return json({ ok: true });
+    }
+
+    // BuyMeACoffee: indirizzo e testo della card (la visibilità si decide con l'interruttore "coffee")
+    if (b === "coffee" && req.method === "POST") {
+      const { url = "", text = "" } = await req.json();
+      let ok = false;
+      try { const u = new URL(String(url).trim()); ok = u.protocol === "https:" && String(url).length <= 300; } catch {}
+      if (url && !ok) return json({ error: "bad url" }, 400);
+      const db = await getDb();
+      db.coffee = { url: String(url).trim(), text: String(text).trim().slice(0, 60) };
       await saveDb(db);
       return json({ ok: true });
     }

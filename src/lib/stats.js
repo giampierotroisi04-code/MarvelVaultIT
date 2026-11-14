@@ -1,6 +1,4 @@
 // Statistiche personali (calcolate sul telefono a partire da catalogo + dati dell'utente)
-import { descIds } from "./util.js";
-
 const rome = (d = new Date()) => d.toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const shift = (day, n) => { const d = new Date(day + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
@@ -14,6 +12,12 @@ export function streaks(days = []) {
   return { cur, best };
 }
 
+// ultimi n giorni (il più vecchio per primo) con "on" se hai guardato qualcosa
+export function lastDays(days = [], n = 14) {
+  const set = new Set(days), today = rome();
+  return Array.from({ length: n }, (_, i) => { const d = shift(today, i - (n - 1)); return { d, on: set.has(d) }; });
+}
+
 const tops = (rows, pick) => { // massimo (o minimo) con pari merito: al massimo 2 titoli
   if (!rows.length) return [];
   const v = pick(rows.map((r) => r.v));
@@ -23,36 +27,53 @@ const tops = (rows, pick) => { // massimo (o minimo) con pari merito: al massimo
 // ---------- Roba a tema Marvel ----------
 export const ENDGAME_MIN = 181; // durata di Avengers: Endgame, per i paragoni
 
-// grado in base alle ore viste (soglie in minuti)
-export const RANKS = [
-  { min: 0, name: "Civile di New York", line: "Hai appena visto i Chitauri dalla finestra: il viaggio comincia ora." },
-  { min: 120, name: "Recluta S.H.I.E.L.D.", line: "Il tuo badge è appena stato stampato." },
-  { min: 600, name: "Agente S.H.I.E.L.D.", line: "Missioni sul campo: il Multiverso ormai ti è familiare." },
-  { min: 1500, name: "Vendicatore", line: "Hai un posto fisso sul Quinjet." },
-  { min: 3600, name: "Stregone Supremo", line: "Il Multiverso non ha più segreti per te." },
-  { min: 7200, name: "L'Osservatore", line: "Vedi tutto, da sempre. Nessuno ne sa più di te." },
-];
+// sceglie la frase della soglia più alta raggiunta
+const tier = (tiers, v) => tiers.reduce((a, [min, t]) => (v >= min ? t : a), tiers[0][1]);
 
-// l'eroe che ti somiglia di più (in ordine di priorità)
-const heroOf = (s) => {
-  if (s.total >= 10 && s.pct >= 70) return { name: "Thanos", line: "Hai raccolto quasi tutto il catalogo. Sei inevitabile." };
-  if (s.topTimes >= 3) return { name: "Doctor Strange", line: "Rivedi, rivedi, rivedi: hai già visto tutti i finali possibili." };
-  if (s.bestStreak >= 7) return { name: "Captain America", line: "Puoi farlo tutto il giorno: la tua costanza è da Primo Vendicatore." };
-  if (s.minutes >= 1500) return { name: "Hulk", line: "Quando parti con una maratona non ti ferma nessuno." };
-  if (s.ratedCount >= 3 && s.avg <= 2.8) return { name: "Nick Fury", line: "Non ti fidi di nessuno: i tuoi voti sono severissimi." };
-  if (s.ratedCount >= 3 && s.avg >= 4.3) return { name: "Spider-Man", line: "Il vicino di casa entusiasta: ami quasi tutto quello che guardi." };
-  return { name: "Tony Stark", line: "La tua armatura è ancora in costruzione: il meglio deve venire." };
+const memesOf = (s) => {
+  const m = {
+    intro: "Resta fino in fondo: c'è una scena dopo i titoli di coda.",
+    hours: tier([
+      [0, "Zero ore. Anche Groot ha detto di più quest'anno."],
+      [1, "Hai appena iniziato. Anche Tony è partito da una caverna."],
+      [300, "Avengers... Assemble! Il tuo divano è ufficialmente una base operativa."],
+      [900, "Più di 15 ore: lo S.H.I.E.L.D. ti ha aperto un fascicolo."],
+      [1800, "Hulk fa a pugni, tu fai maratone. Chi è più forte?"],
+      [3600, "Hai visto più Marvel di quante cose Nick Fury nasconda ai suoi agenti."],
+      [7200, "Hai visto 14.000.605 futuri. In tutti eri sul divano."],
+    ], s.minutes),
+    streak: tier([
+      [0, "Streak spenta. Anche Thanos si è preso una pausa in campagna."],
+      [3, "Tre giorni di fila: stai facendo il training montage."],
+      [7, "Una settimana intera. «Posso farlo tutto il giorno»."],
+      [14, "Due settimane di fila: Capitan America ti ha appena dato il cinque."],
+      [30, "Un mese di fila: la T.V.A. vuole studiarti."],
+    ], s.bestStreak),
+    rewatch: tier([
+      [0, "Nessun rewatch. Doctor Strange ha provato 14.000.605 volte, tu neanche una."],
+      [2, "Seconda visione: hai cercato di nuovo il cameo di Stan Lee."],
+      [3, "Tre volte: ormai le battute le sai a memoria."],
+      [5, "Cinque rewatch: capisci le scene post-credit meglio degli sceneggiatori."],
+      [10, "Dieci volte? Sei in un loop temporale: chiama la T.V.A."],
+    ], s.topTimes),
+    pct: tier([
+      [0, "Hai solo grattato la superficie: il Multiverso è enorme."],
+      [25, "Un quarto del catalogo: lo S.H.I.E.L.D. ti ha appena dato il badge."],
+      [50, "Metà catalogo: perfettamente bilanciato, come tutte le cose dovrebbero essere."],
+      [75, "Ne manca poco: «Sono inevitabile»."],
+      [100, "Catalogo completo. «Io sono Iron Man»."],
+    ], s.total ? s.pct : 0),
+    best: s.best.length ? "Il tuo Tesseract: tutto il resto gli ruota intorno." : "Nessun voto: il trono di Asgard è vuoto.",
+    worst: "Ogni universo ha il suo Ultron. Questo è il tuo.",
+    avg: !s.ratedCount ? "Nessun voto: più riservato di Wakanda prima del 2018."
+      : s.avg >= 4.5 ? "Voti altissimi: per te è tutto un capolavoro. Tony Stark ti vuole nel marketing."
+      : s.avg <= 2.5 ? "Voti bassissimi: Nick Fury ti vuole come critico ufficiale."
+      : "Giudizio equilibrato: né Thor in estasi né Fury sospettoso.",
+  };
+  // la frase che finisce sulla foto: la più "epica" tra quelle raggiunte
+  m.card = s.total && s.pct >= 100 ? m.pct : s.topTimes >= 10 ? m.rewatch : s.bestStreak >= 14 ? m.streak : m.hours;
+  return m;
 };
-
-// le sei Gemme dell'Infinito: si sbloccano con piccoli traguardi
-const stonesOf = (s) => [
-  { k: "space", short: "Spazio", name: "Gemma dello Spazio", color: "#2d7bff", on: s.seen >= 5, need: "Guarda 5 progetti" },
-  { k: "mind", short: "Mente", name: "Gemma della Mente", color: "#ffd23a", on: s.ratedCount >= 5, need: "Vota 5 titoli" },
-  { k: "reality", short: "Realtà", name: "Gemma della Realtà", color: "#ff3b3b", on: s.minutes >= 1200, need: "Raggiungi 20 ore viste" },
-  { k: "power", short: "Potere", name: "Gemma del Potere", color: "#a05cff", on: s.bestStreak >= 7, need: "Fai una streak di 7 giorni" },
-  { k: "time", short: "Tempo", name: "Gemma del Tempo", color: "#2fe07a", on: s.rewatched, need: "Rivedi un titolo già visto" },
-  { k: "soul", short: "Anima", name: "Gemma dell'Anima", color: "#ff9a2b", on: s.pct >= 50, need: "Completa il 50% del catalogo" },
-];
 
 export function computeStats(media = [], user = {}, categories = []) {
   const w = new Set(user.watched || []), plays = user.plays || {}, ratings = user.ratings || {};
@@ -83,14 +104,6 @@ export function computeStats(media = [], user = {}, categories = []) {
   const top = tops(times, (a) => Math.max(...a));
   const { cur, best: bestStreak } = streaks(user.days);
 
-  // universo preferito: la categoria principale con più titoli visti
-  let universe = null;
-  for (const c of categories.filter((x) => !x.parentId)) {
-    const ids = descIds(categories, c.id);
-    const n = media.filter((m) => seenIds.has(m.id) && m.categoryIds?.some((x) => ids.includes(x))).length;
-    if (n > 0 && (!universe || n > universe.n)) universe = { name: c.name, emoji: c.emoji || "", n };
-  }
-
   const s = {
     minutes, seen, total: media.length, views, filmsSeen, seriesSeen,
     pct: media.length ? Math.round((seen / media.length) * 100) : 0,
@@ -104,15 +117,9 @@ export function computeStats(media = [], user = {}, categories = []) {
     avg: rated.length ? Math.round((rated.reduce((t, r) => t + r.v, 0) / rated.length) * 10) / 10 : 0,
     missingRuntime: media.some((m) => plays[m.id] > 0 && !m.runtime && m.type !== "series"),
     endgames: Math.round((minutes / ENDGAME_MIN) * 10) / 10,
-    universe,
   };
-  const ri = RANKS.reduce((a, r, i) => (minutes >= r.min ? i : a), 0);
-  s.rank = RANKS[ri];
-  s.nextRank = RANKS[ri + 1] || null;
-  s.rankPct = s.nextRank ? Math.round(((minutes - s.rank.min) / (s.nextRank.min - s.rank.min)) * 100) : 100;
-  s.hero = heroOf(s);
-  s.stones = stonesOf(s);
-  s.stonesOn = s.stones.filter((x) => x.on).length;
+  s.last14 = lastDays(user.days, 14);
+  s.memes = memesOf(s);
   return s;
 }
 

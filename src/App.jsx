@@ -6,6 +6,7 @@ import { I } from "./Icons.jsx";
 import Admin from "./Admin.jsx";
 import { StatsView, WrapView } from "./Stats.jsx";
 import logo from "./logo.jpg";
+import coffeeImg from "./coffee.png";
 
 const tg = window.Telegram?.WebApp;
 
@@ -153,6 +154,25 @@ const Header = ({ onSearch, onBell, unread = 0 }) => (
     <button className="ico" onClick={onSearch} aria-label="Cerca"><I.Search size={20} /></button>
   </header>
 );
+
+// BuyMeACoffee: card piccola e chiudibile (torna dopo 7 giorni). Appare solo se l'admin la pubblica.
+const COFFEE_HIDE = "mv_coffee_hide";
+const openCoffee = (url) => (tg?.openLink ? tg.openLink(url) : window.open(url, "_blank", "noopener"));
+function CoffeeCard({ coffee }) {
+  const [hide, setHide] = useState(() => { try { return Date.now() - Number(localStorage.getItem(COFFEE_HIDE) || 0) < 7 * 864e5; } catch { return false; } });
+  if (!coffee || hide) return null;
+  const close = () => { try { localStorage.setItem(COFFEE_HIDE, String(Date.now())); } catch {} setHide(true); };
+  return (
+    <div className="coffee">
+      <button className="coffee-go" onClick={() => openCoffee(coffee.url)}>
+        <img className="coffee-img" src={coffeeImg} alt="Buy me a coffee" />
+        <span className="coffee-tx"><b>{coffee.text || "Offrici un caffè"}</b><small>Il bot è gratis: se ti piace, dai una mano</small></span>
+        <I.Chevron size={16} />
+      </button>
+      <button className="coffee-x" aria-label="Nascondi" onClick={close}><I.X size={14} /></button>
+    </div>
+  );
+}
 
 // Quali notifiche ricevere (Impostazioni → Notifiche). Di default sono tutte attive.
 const NOTIFS = [
@@ -470,7 +490,7 @@ function BotGuide() {
   );
 }
 
-function ProfilePage({ media, user, me, categories = [], features = {}, go, say, setSetting }) {
+function ProfilePage({ media, user, me, categories = [], coffee = null, features = {}, go, say, setSetting }) {
   const [wrap, setWrap] = useState(false);
   const [rep, setRep] = useState(false);
   const [req, setReq] = useState(false);
@@ -556,6 +576,16 @@ function ProfilePage({ media, user, me, categories = [], features = {}, go, say,
               <span className="help-tx"><b>Vibrazione</b><small>Un leggero feedback quando tocchi, voti o segni un titolo come visto.</small></span>
               <span className={"sw" + (vib ? " on" : "")}><i /></span>
             </button>
+            {coffee && (
+              <>
+                <div className="set-h">Supporto</div>
+                <button className="help-card" onClick={() => openCoffee(coffee.url)}>
+                  <img className="coffee-img sm" src={coffeeImg} alt="" />
+                  <span className="help-tx"><b>{coffee.text || "Offrici un caffè"}</b><small>Il bot è gratis: se ti piace, dai una mano.</small></span>
+                  <span className="help-go">›</span>
+                </button>
+              </>
+            )}
             <div className="set-h">Guida all'uso del bot</div>
             <BotGuide />
           </div>
@@ -975,7 +1005,8 @@ export default function App() {
   const [boot, setBoot] = useState({ loading: true });
   const [stack, setStack] = useState([location.search.includes("admin=1") ? { n: "admin" } : { n: "home" }]);
   const [toast, setToast] = useState("");
-  const [splash, setSplash] = useState(true);
+  const [splash, setSplash] = useState("in"); // "in" visibile · "out" in uscita · "" tolto
+  const [splashMin, setSplashMin] = useState(false); // tempo minimo perché l'animazione si veda tutta
   const [bell, setBell] = useState(null); // null = chiuso; altrimenti { prev } = ultima lettura prima di aprire
   const view = stack[stack.length - 1];
   const go = (v) => setStack((s) => [...s, v]);
@@ -999,8 +1030,16 @@ export default function App() {
     tg?.ready(); tg?.expand();
     tg?.setHeaderColor?.("#000000"); tg?.setBackgroundColor?.("#000000");
     load();
-    setTimeout(() => setSplash(false), 1800);
+    setTimeout(() => setSplashMin(true), 1250);
   }, []);
+
+  // la schermata iniziale esce solo quando l'animazione è finita E i dati sono pronti
+  useEffect(() => { if (splash === "in" && splashMin && !boot.loading) setSplash("out"); }, [splash, splashMin, boot.loading]);
+  useEffect(() => {
+    if (splash !== "out") return;
+    const t = setTimeout(() => setSplash(""), 600);
+    return () => clearTimeout(t);
+  }, [splash]);
 
   useEffect(() => {
     if (!tg?.BackButton) return;
@@ -1009,7 +1048,7 @@ export default function App() {
     return () => tg.BackButton.offClick(back);
   }, [stack.length]);
 
-  const { media = [], categories = [], timeline = [], timelineOut = [], doomsday, features = {}, user = { watchlist: [], watched: [] }, me } = boot;
+  const { media = [], categories = [], timeline = [], timelineOut = [], doomsday, features = {}, coffee = null, user = { watchlist: [], watched: [] }, me } = boot;
   hapticOn = user.settings?.haptics !== false;
   const notifs = (user.notifs || []).filter((n) => notifOn(user, n.type));
   const unread = notifs.filter((n) => n.at > (user.nread || 0)).length;
@@ -1157,6 +1196,7 @@ export default function App() {
               <div className="sec"><h2>Esplora</h2></div>
               {roots.length > 0 && <CatTiles home cats={roots} count={(id) => inCat(id).length} go={go} />}
             </section>
+            <CoffeeCard coffee={coffee} />
           </div>
         </div>
       );
@@ -1182,14 +1222,21 @@ export default function App() {
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
     else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} />;
     else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} toggle={toggle} setSeen={setSeen} />;
-    else if (view.n === "profile" || view.n === "list" || view.n === "stats") body = <ProfilePage media={media} user={user} me={me} categories={categories} features={features} go={go} say={say} setSetting={setSetting} />;
+    else if (view.n === "profile" || view.n === "list" || view.n === "stats") body = <ProfilePage media={media} user={user} me={me} categories={categories} coffee={coffee} features={features} go={go} say={say} setSetting={setSetting} />;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 
   const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ...(features.timeline ? [["timeline", I.Clock, "Timeline"]] : []), ...(features.doom && Date.now() <= DOOM_OPEN_UNTIL ? [["doom", I.Mask, "Doomsday"]] : []), ["profile", I.User, "Profilo"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
   return (
     <>
-      {splash && <div className="splash"><img src={logo} alt="" /><div className="tri" /></div>}
+      {splash && (
+        <div className={"splash" + (splash === "out" ? " out" : "")} aria-hidden="true">
+          <div className="splash-glow" />
+          <img src={logo} alt="" />
+          <div className="tri" />
+          <p className="splash-tx">Marvel Italia Streaming</p>
+        </div>
+      )}
       {!boot.error && !boot.gate && <Header onSearch={() => tab({ n: "search" })} onBell={openBell} unread={unread} />}
       {bell && <NotifSheet notifs={notifs} media={media} readAt={bell.prev} onOpen={openNotif} onClear={clearNotifs} onClose={() => setBell(null)} />}
       {body}

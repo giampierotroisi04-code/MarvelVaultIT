@@ -96,13 +96,21 @@ button{font-family:inherit;cursor:pointer}
 .biglogo{width:60vw;max-width:260px;border-radius:50%}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;background:#fff;color:#000;font-weight:600;font-size:14px;padding:11px 18px;border-radius:99px;box-shadow:0 8px 30px rgba(0,0,0,.5);z-index:50;white-space:nowrap}
 .toast svg{color:var(--green)}
-/* splash */
-.splash{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;animation:out .4s 1.4s forwards}
-.splash img{width:62vw;max-width:300px;border-radius:50%;animation:pop .7s cubic-bezier(.2,1.4,.4,1) both}
-.splash .tri{width:0;border-radius:3px;animation:sweep .8s .5s forwards}
-@keyframes pop{from{opacity:0;transform:scale(.4) rotate(-20deg)}to{opacity:1;transform:none}}
-@keyframes sweep{to{width:62vw;max-width:300px}}
-@keyframes out{to{opacity:0;visibility:hidden}}
+/* splash: tutto con opacity/transform (GPU), niente animazioni di larghezza */
+.splash{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;overflow:hidden}
+.splash.out{pointer-events:none;animation:splashOut .55s cubic-bezier(.4,0,.2,1) forwards}
+.splash-glow{position:absolute;left:50%;top:50%;width:150vmax;height:150vmax;margin:-75vmax 0 0 -75vmax;pointer-events:none;background:radial-gradient(circle at 38% 42%,rgba(227,22,28,.22),transparent 28%),radial-gradient(circle at 62% 58%,rgba(0,146,70,.18),transparent 28%);animation:splashGlow .9s ease-out backwards,splashBreath 3.2s ease-in-out .9s infinite}
+.splash img{position:relative;width:56vw;max-width:260px;border-radius:50%;animation:splashLogo .95s cubic-bezier(.22,1,.36,1) backwards;transition:transform .55s cubic-bezier(.4,0,.2,1);will-change:transform,opacity}
+.splash.out img{transform:scale(1.1)}
+.splash .tri{position:relative;width:56vw;max-width:260px;border-radius:3px;transform-origin:left center;animation:splashBar .95s cubic-bezier(.65,0,.35,1) .4s backwards;will-change:transform}
+.splash-tx{position:relative;margin:-6px 0 0;font-size:11px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--tx2);animation:splashTx .8s cubic-bezier(.22,1,.36,1) .65s backwards}
+@keyframes splashLogo{from{opacity:0;transform:translateY(10px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes splashBar{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes splashTx{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes splashGlow{from{opacity:0}to{opacity:1}}
+@keyframes splashBreath{50%{opacity:.55}}
+@keyframes splashOut{to{opacity:0}}
+@media (prefers-reduced-motion:reduce){.splash *,.splash{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important}.splash img{transition:none}}
 
 /* ---- Palette e tricolore Marvel Italia ---- */
 h1,h2,.brand b{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;letter-spacing:.04em;text-transform:uppercase}
@@ -203,7 +211,6 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .tva-stat b{font-size:20px;text-shadow:0 0 10px rgba(255,157,46,.8)}
 .tva-line{position:relative;z-index:3;padding:6px 0}
 .tva-spine{position:absolute;left:50%;top:0;bottom:0;width:4px;margin-left:-2px;background:linear-gradient(180deg,var(--am2),var(--am));border-radius:2px;box-shadow:0 0 14px rgba(255,157,46,.55)}
-}
 .tnode{position:relative;display:flex;margin:14px 0;min-height:72px}
 .tnode.l{justify-content:flex-start;padding-right:calc(50% + 18px)}
 .tnode.r{justify-content:flex-end;padding-left:calc(50% + 18px)}
@@ -476,35 +483,9 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .gq p{margin:0;padding:0 14px 14px;font-size:14px;line-height:1.5;color:var(--tx2)}
 
 /* ---------- Statistiche a tema Marvel ---------- */
-.st-rank{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;padding:16px;border-radius:18px;border:1px solid rgba(227,22,28,.5);background:linear-gradient(160deg,rgba(227,22,28,.16),var(--s1) 62%)}
-.st-rank-top{display:flex;align-items:center;gap:12px}
-.st-rank-top small,.st-hero small,.st-stones-h small{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx2);font-weight:700}
-.st-rank-top b{display:block;font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:32px;line-height:1;letter-spacing:.03em}
-.st-rank-ic{flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--red);color:#fff}
-.st-rank>em,.st-hero em{font-style:normal;font-size:13px;color:var(--tx2)}
-.st-bar.thin{height:6px;margin:8px 0 0}
-.st-rank-f{font-size:12px;color:var(--tx2);letter-spacing:0;text-transform:none;font-weight:500}
-.st-hero{display:flex;flex-direction:column;gap:2px;margin-top:10px;padding-top:12px;border-top:1px solid var(--bd)}
-.st-hero b{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:28px;line-height:1.05;letter-spacing:.03em;color:#ffd23a}
 .st-grid{margin-top:0}
-.st-stones{margin-top:14px;padding:14px;border-radius:18px;border:1px solid var(--bd);background:var(--s1)}
-.st-stones-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-.st-stones-h b{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:26px;letter-spacing:.04em}
-.stones{display:flex;justify-content:space-between;gap:4px}
-.stone{display:flex;flex-direction:column;align-items:center;gap:4px;opacity:.55}
-.stone.on{opacity:1}
-.stone small{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx2);font-weight:700}
-.stone.on small{color:var(--g,#fff)}
-.st-stl{display:flex;flex-direction:column;margin-top:12px}
-.st-stl>div{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--bd);opacity:.6}
-.st-stl>div.on{opacity:1}
-.st-stl span{flex:1;display:flex;flex-direction:column}
-.st-stl b{font-size:14px}
-.st-stl small{font-size:12px;color:var(--tx2)}
-.st-stl svg:last-child{color:#5fd078}
-.st-snap{margin-top:10px;text-align:center;font-weight:800;color:#ffd23a}
 
-/* ---------- Wrapped: locandina di sfondo, gemme, foto finale ---------- */
+/* ---------- Wrapped: locandina di sfondo, foto finale ---------- */
 .wrap>*{z-index:1}
 .wrap-bg{position:absolute;inset:0;z-index:0;background:center/cover;opacity:0;animation:wrapbg .8s ease forwards}
 .wrap-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.5),rgba(0,0,0,.86) 60%,#000)}
@@ -512,12 +493,6 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .wrap-prog{height:8px;border-radius:99px;background:rgba(255,255,255,.16);overflow:hidden;max-width:280px}
 .wrap-prog i{display:block;height:100%;border-radius:99px;background:var(--ac,var(--red))}
 .wrap-foot{font-style:normal;font-size:13px;color:var(--tx2)}
-.wrap-stones{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 10px;max-width:300px;margin-top:6px}
-.wrap-stones .stone small{font-size:11px}
-.wrap-stones .stone svg{animation:gemfloat 3s ease-in-out infinite}
-.wrap-stones .stone:nth-child(2n) svg{animation-delay:.6s}.wrap-stones .stone:nth-child(3n) svg{animation-delay:1.2s}
-@keyframes gemfloat{50%{transform:translateY(-4px)}}
-.wrap-hero .wrap-body h1,.wrap-rank .wrap-body h1{font-size:54px}
 .wrap-end .wrap-body{justify-content:flex-start;gap:10px;padding-top:44px;min-height:0}
 .wrap-pic{flex:1;min-height:0;display:flex;justify-content:center;align-items:center}
 .wrap-pic img{max-height:100%;max-width:100%;border-radius:16px;border:1px solid rgba(255,255,255,.25);box-shadow:0 10px 40px rgba(0,0,0,.6)}
@@ -527,3 +502,40 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .wrap-nav.col{flex-direction:column;gap:8px}
 .wrap-sub{display:flex;justify-content:space-between;padding:2px 4px}
 .btn:disabled{opacity:.5}
+
+/* ---------- Wrapped v2: schermate con grafica, frasi meme, tocco per avanzare ---------- */
+.wrap{padding-top:calc(70px + env(safe-area-inset-top))}
+.wrap-head{position:absolute;left:20px;top:calc(30px + env(safe-area-inset-top));display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.2em;color:var(--tx2)}
+.wrap-head img{width:22px;height:22px;border-radius:50%}
+.wrap-tap{position:absolute;top:calc(70px + env(safe-area-inset-top));bottom:calc(110px + env(safe-area-inset-bottom));background:transparent;border:0;z-index:2}
+.wrap-tap.l{left:0;width:30%}.wrap-tap.r{right:0;width:70%}
+.wrap-body{justify-content:flex-start;min-height:0;overflow-y:auto}
+.wrap-body>:first-child{margin-top:auto}.wrap-body>:last-child{margin-bottom:auto}
+.wrap-end .wrap-body>:first-child{margin-top:0}.wrap-end .wrap-body>:last-child{margin-bottom:0}
+.wrap-top .wrap-body h1,.wrap-best .wrap-body h1,.wrap-worst .wrap-body h1{font-size:46px}
+.w-meme{display:flex;gap:8px;align-items:flex-start;margin-top:4px;padding:12px 14px;border-radius:14px;background:var(--s1);border:1px solid var(--bd);border-left:4px solid var(--ac,var(--red));font-weight:600;font-size:14.5px;line-height:1.4;color:#f1f1f4;max-width:36ch}
+.w-meme b{flex:none;font-family:"Bebas Neue",Impact,sans-serif;font-size:34px;line-height:.75;color:var(--ac,var(--red));font-weight:400}
+.w-me{display:flex;align-items:center;gap:14px}
+.w-me img,.w-me span{flex:none;width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid var(--red);display:flex;align-items:center;justify-content:center;background:var(--red);font-family:"Bebas Neue",Impact,sans-serif;font-size:46px}
+.w-me b{font-size:20px;overflow-wrap:anywhere}
+.w-eg{display:flex;flex-wrap:wrap;gap:6px;color:var(--red);max-width:300px;align-items:center}
+.w-eg b{font-size:20px}
+.w-heat{display:grid;grid-template-columns:repeat(7,30px);gap:6px}
+.w-heat i{height:30px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid var(--bd)}
+.w-heat i.on{background:var(--ac);border-color:transparent;box-shadow:0 0 10px var(--ac)}
+.w-ring{width:150px;height:150px}
+.w-stars{font-size:40px;letter-spacing:4px;line-height:1}
+.w-stars span{color:rgba(255,255,255,.2)}.w-stars span.on{color:#ffd23a;text-shadow:0 0 12px rgba(255,210,58,.6)}
+.w-poster{align-self:flex-start;width:118px;aspect-ratio:2/3;border-radius:12px;background:var(--s1) center/cover;border:1px solid rgba(255,255,255,.3);box-shadow:0 10px 30px rgba(0,0,0,.6)}
+
+/* ---------- BuyMeACoffee: card piccola in Home ---------- */
+.coffee{position:relative;margin:18px 0 6px}
+.coffee-go{display:flex;align-items:center;gap:12px;width:100%;padding:11px 40px 11px 12px;text-align:left;background:var(--s1);border:1px solid var(--bd);border-radius:14px;color:var(--tx);font:inherit}
+.coffee-go:active{background:var(--s2)}
+.coffee-img{flex:none;height:64px;width:auto;border-radius:10px;background:#fff;display:block}
+.coffee-img.sm{height:44px}
+.coffee-tx{flex:1;display:flex;flex-direction:column;min-width:0}
+.coffee-tx b{font-size:14px}
+.coffee-tx small{font-size:12px;color:var(--tx2)}
+.coffee-go>svg{flex:none;color:var(--tx2)}
+.coffee-x{position:absolute;top:6px;right:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;color:var(--tx2);border-radius:50%}
