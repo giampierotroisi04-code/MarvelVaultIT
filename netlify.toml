@@ -9,6 +9,6 @@
   node_bundler = "esbuild"
 [[redirects]]
   from = "/*"
-  to = "https://NUOVOSITO.workers.dev/:splat"
+  to = "https://marvel-vault.tuamammatroia80.workers.dev/:splat"
   status = 302
   force = true
