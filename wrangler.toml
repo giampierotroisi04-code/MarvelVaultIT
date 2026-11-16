@@ -1,0 +1,26 @@
+name = "marvel-vault"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+keep_vars = true
+
+# Il sito React (cartella dist creata da "npm run build").
+# Le richieste /api/* passano dal Worker, tutto il resto è servito come file statico.
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# Database: un bucket R2 (crealo prima del deploy, vedi guida)
+[[r2_buckets]]
+binding = "VAULT"
+bucket_name = "marvel-vault"
+
+# Controllo anniversari ogni giorno alle 06:00 UTC
+[triggers]
+crons = ["0 6 * * *"]
+
+# Al posto di @netlify/blobs usa lo storage su R2
+[alias]
+"@netlify/blobs" = "./worker/blobs-shim.js"
