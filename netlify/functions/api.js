@@ -1,4 +1,5 @@
 import { getStore } from "@netlify/blobs";
+import { getBucket, takeOps } from "../../worker/blobs-shim.js";
 import crypto from "node:crypto";
 import { parseLink, buildLink, BOT_USERNAME } from "../../src/lib/util.js";
 import { runAnniversaries } from "../../src/lib/anniv.js";
@@ -18,40 +19,76 @@ const store = () => getStore({ name: "vault", consistency: "strong" });
 const json = (d, s = 200) =>
   new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });
 const uid = () => crypto.randomBytes(5).toString("hex");
-// ---------- Tracker crediti (stima): conta chiamate, tempo e byte del backend, giorno per giorno ----------
-const RATE = { gb: 20, gbh: 10, req10k: 2, deploy: 15 }; // crediti: per GB di banda, per GB-ora di calcolo, ogni 10.000 richieste, per deploy
-const SHELL = { kb: 250, req: 12 };                      // quota stimata per ogni apertura dell'app (pagina, codice, immagini statiche serviti dalla CDN)
+// ---------- Monitor limiti R2 (piano gratuito: 10 GB, 1M scritture/mese, 10M letture/mese) + alert Telegram agli admin ----------
 const romeDay = (t = Date.now()) => new Date(t).toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const r2 = (n) => Math.round(n * 100) / 100;
-const emptyDay = () => ({ req: 0, ms: 0, bytes: 0, opens: 0, deploys: 0 });
-const creditsOf = (d) => {
-  const bw = ((d.bytes + d.opens * SHELL.kb * 1024) / 1073741824) * RATE.gb;
-  const comp = (d.ms / 1000 / 3600) * RATE.gbh; // funzioni con 1 GB di memoria
-  const rq = ((d.req + d.opens * SHELL.req) / 10000) * RATE.req10k;
-  const dep = (d.deploys || 0) * RATE.deploy;
-  return { bw: r2(bw), comp: r2(comp), rq: r2(rq), dep: r2(dep), total: r2(bw + comp + rq + dep) };
-};
-async function meterTrack(req, res, ms, context) {
-  const [a, b] = new URL(req.url).pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
-  if (a === "admin" && b === "meter") return; // il tracker non conta se stesso
-  let bytes = 0;
-  try { bytes = (await res.clone().arrayBuffer()).byteLength; } catch {}
-  const key = "meter:" + romeDay();
-  const d = (await store().get(key, { type: "json" }).catch(() => null)) || emptyDay();
-  d.req++; d.ms += ms; d.bytes += bytes;
-  if (a === "catalog") {
-    d.opens++;
-    // un nuovo deploy in produzione si riconosce dall'id: la prima volta che lo si vede vale 15 crediti
-    const dep = context?.deploy?.id || process.env.DEPLOY_ID;
-    if (dep) {
-      const last = await store().get("meter:deploy").catch(() => null);
-      if (last !== dep) {
-        await store().set("meter:deploy", String(dep)).catch(() => {});
-        if (last && (context?.deploy?.context || "production") === "production") d.deploys = (d.deploys || 0) + 1;
+const num = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+const R2_LIMITS = () => ({
+  gb: num(process.env.R2_LIMIT_GB, 10),            // storage
+  a: num(process.env.R2_LIMIT_A, 1_000_000),       // Class A al mese (put, list)
+  b: num(process.env.R2_LIMIT_B, 10_000_000),      // Class B al mese (get)
+});
+const WARN_AT = [80, 95]; // soglie % per l'alert
+const emptyMonth = () => ({ a: 0, b: 0, req: 0, days: {}, alerts: {} });
+
+// Controlla le soglie: restituisce i messaggi nuovi (uno per soglia, una sola volta al mese) e li segna in d.alerts
+function newR2Alerts(d, st) {
+  const L = R2_LIMITS(), out = [];
+  const checks = [
+    ["a", "scritture (Class A)", d.a, L.a, (v) => Math.round(v).toLocaleString("it-IT")],
+    ["b", "letture (Class B)", d.b, L.b, (v) => Math.round(v).toLocaleString("it-IT")],
+    ["s", "spazio occupato", (st?.bytes || 0) / 1073741824, L.gb, (v) => r2(v) + " GB"],
+  ];
+  for (const [k, label, used, max, f] of checks) {
+    const p = (used / max) * 100;
+    for (const w of WARN_AT) {
+      if (p >= w && !d.alerts[k + w]) {
+        d.alerts[k + w] = true;
+        out.push(`${w >= 95 ? "🚨" : "⚠️"} R2: ${label} al ${Math.floor(p)}% del limite gratuito (${f(used)} su ${f(max)}).`);
       }
     }
   }
+  return out;
+}
+async function r2Notify(msgs) {
+  if (!msgs.length || !process.env.BOT_TOKEN) return;
+  for (const id of admins()) await tg("sendMessage", { chat_id: id, text: msgs.join("\n\n") }).catch(() => {});
+}
+
+// Chiamato a fine di ogni richiesta: salva le operazioni R2 fatte e manda l'alert se serve
+async function meterTrack(req, res) {
+  const [a, b] = new URL(req.url).pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
+  if (a === "admin" && b === "meter") return; // il monitor non conta se stesso
+  const o = takeOps();
+  const day = romeDay(), key = "meter:r2:" + day.slice(0, 7);
+  const d = (await store().get(key, { type: "json" }).catch(() => null)) || emptyMonth();
+  d.a += o.a; d.b += o.b; d.req++;
+  const x = (d.days[day.slice(8)] ||= { a: 0, b: 0, req: 0, opens: 0 });
+  x.a += o.a; x.b += o.b; x.req++;
+  if (a === "catalog") x.opens++;
+  const st = await store().get("meter:r2:storage", { type: "json" }).catch(() => null);
+  const msgs = newR2Alerts(d, st);
   await store().setJSON(key, d);
+  await r2Notify(msgs);
+}
+
+// Ricalcola lo spazio occupato nel bucket (cron giornaliero + pulsante nel pannello admin)
+export async function r2StorageScan() {
+  const bk = getBucket();
+  let cursor, bytes = 0, objects = 0;
+  do {
+    const r = await bk.list({ cursor, limit: 1000 });
+    for (const ob of r.objects) { bytes += ob.size; objects++; }
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+  const st = { bytes, objects, at: Date.now() };
+  const key = "meter:r2:" + romeDay().slice(0, 7);
+  const d = (await store().get(key, { type: "json" }).catch(() => null)) || emptyMonth();
+  const msgs = newR2Alerts(d, st);
+  await store().setJSON("meter:r2:storage", st);
+  await store().setJSON(key, d);
+  await r2Notify(msgs);
+  return st;
 }
 const admins = () => (process.env.ADMIN_IDS || "").split(",").map((x) => x.trim()).filter(Boolean);
 
@@ -141,7 +178,7 @@ function limited(id) {
   return false;
 }
 
-// ---------- Database (Netlify Blobs) ----------
+// ---------- Database (Cloudflare R2, via worker/blobs-shim.js) ----------
 const getDb = async () => (await store().get("catalog", { type: "json" })) || { media: [], categories: [] };
 const saveDb = (db) => store().setJSON("catalog", db);
 const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
@@ -844,44 +881,15 @@ const handler = async (req) => {
     if (!isAdmin) { console.warn("admin negato per", user.id); return json({ error: "forbidden" }, 403); }
 
     if (b === "meter") {
-      const cfg = (await store().get("meter:cfg", { type: "json" }).catch(() => null)) || {};
-      if (req.method === "POST") {
-        const body = await req.json();
-        const num = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) < 1e7 ? Number(v) : null);
-        if (body.reset) { delete cfg.balance; delete cfg.calibAt; delete cfg.calibDay; delete cfg.calibUsed; }
-        if (body.plan !== undefined) { const v = num(body.plan); if (v === null) return json({ error: "bad request" }, 400); cfg.plan = v; }
-        if (body.balance !== undefined) {
-          const v = num(body.balance);
-          if (v === null) return json({ error: "bad request" }, 400);
-          const today = (await store().get("meter:" + romeDay(), { type: "json" }).catch(() => null)) || emptyDay();
-          Object.assign(cfg, { balance: v, calibAt: Date.now(), calibDay: romeDay(), calibUsed: creditsOf(today).total });
-        }
-        await store().setJSON("meter:cfg", cfg);
-        return json({ ok: true });
+      if (req.method === "POST") { // "Ricalcola spazio"
+        const st = await r2StorageScan();
+        return json({ ok: true, storage: st });
       }
-      const today = romeDay(), base = new Date(today + "T12:00:00Z").getTime();
-      const keys = Array.from({ length: 30 }, (_, i) => new Date(base - (29 - i) * 864e5).toISOString().slice(0, 10));
-      const days = await Promise.all(keys.map(async (k) => {
-        const d = (await store().get("meter:" + k, { type: "json" }).catch(() => null)) || emptyDay();
-        return { d: k, req: d.req, opens: d.opens, deploys: d.deploys || 0, mb: r2(d.bytes / 1048576), credits: creditsOf(d) };
-      }));
-      const plan = cfg.plan ?? 300;
-      const month = r2(days.filter((x) => x.d.startsWith(today.slice(0, 7))).reduce((n, x) => n + x.credits.total, 0));
-      let remaining = plan - month;
-      if (cfg.balance != null && cfg.calibDay) {
-        let since = 0;
-        for (const x of days) {
-          if (x.d > cfg.calibDay) since += x.credits.total;
-          else if (x.d === cfg.calibDay) since += Math.max(0, x.credits.total - (cfg.calibUsed || 0));
-        }
-        remaining = cfg.balance - since;
-      }
-      const avg7 = days.slice(-7).reduce((n, x) => n + x.credits.total, 0) / 7;
-      const [y, m] = today.split("-").map(Number);
-      return json({
-        plan, remaining: r2(remaining), month, avg7: r2(avg7), forecast: r2(avg7 * new Date(y, m, 0).getDate()),
-        calibrated: cfg.balance != null, calibAt: cfg.calibAt || null, balance: cfg.balance ?? null, days, rates: RATE, shell: SHELL,
-      });
+      const day = romeDay(), month = day.slice(0, 7);
+      const d = (await store().get("meter:r2:" + month, { type: "json" }).catch(() => null)) || emptyMonth();
+      const st = await store().get("meter:r2:storage", { type: "json" }).catch(() => null);
+      const days = Object.entries(d.days).sort().map(([k, v]) => ({ d: `${month}-${k}`, ...v }));
+      return json({ limits: R2_LIMITS(), warnAt: WARN_AT, month: { a: d.a, b: d.b, req: d.req }, storage: st, days, alerts: d.alerts });
     }
     if (b === "catalog") return json(await getDb());
     if (b === "autolink" && req.method === "GET") return json(await getPending());
@@ -1283,8 +1291,7 @@ const handler = async (req) => {
 };
 
 export default async (req, context) => {
-  const t0 = Date.now();
   const res = await handler(req, context);
-  try { await meterTrack(req, res, Date.now() - t0, context); } catch {} // il tracker non deve mai rompere una risposta
+  try { await meterTrack(req, res); } catch {} // il tracker non deve mai rompere una risposta
   return res;
 };

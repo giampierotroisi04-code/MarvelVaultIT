@@ -5,6 +5,7 @@
 import { setBucket } from "./blobs-shim.js";
 import api from "../netlify/functions/api.js";
 import anniversari from "../netlify/functions/anniversari.js";
+import { r2StorageScan } from "../netlify/functions/api.js";
 import { migrate } from "./migrate.js";
 
 // Il codice originale legge le variabili da process.env: le copiamo da Cloudflare.
@@ -36,5 +37,6 @@ export default {
   async scheduled(event, env, ctx) {
     prepare(env);
     ctx.waitUntil(anniversari());
+    ctx.waitUntil(r2StorageScan().catch((e) => console.error("scan R2", e))); // spazio usato + alert limiti R2
   },
 };

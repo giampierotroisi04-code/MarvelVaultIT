@@ -10,7 +10,7 @@ const ask = (msg) => new Promise((ok) => (tg?.showConfirm ? tg.showConfirm(msg, 
 const choose = (title, message, buttons) =>
   new Promise((ok) => (tg?.showPopup ? tg.showPopup({ title, message, buttons }, ok) : ok(window.confirm(message) ? buttons[0].id : null)));
 
-// ---------- Upload immagine (compressa nel browser, salva su Netlify Blobs) ----------
+// ---------- Upload immagine (compressa nel browser, salva su Cloudflare R2) ----------
 function Img({ value, url, onChange, label = "Immagine" }) {
   const [busy, setBusy] = useState(false);
   const pick = async (e) => {
@@ -318,7 +318,7 @@ function Stats() {
       {s.top.map((t, i) => <div className="item" key={t.id}><b>{i + 1}. {t.title}</b> <small>{t.sends} invii</small></div>)}
       <h2 className="sub">Iscrizione obbligatoria</h2>
       <div className="box">
-        {sub.state === "off" && "Non attiva. Imposta REQUIRED_CHANNEL su Netlify per attivarla."}
+        {sub.state === "off" && "Non attiva. Imposta REQUIRED_CHANNEL tra le variabili di Cloudflare per attivarla."}
         {sub.state === "ok" && `Attiva su ${sub.channel}. Il controllo funziona.`}
         {sub.state === "error" && `Controllo non funzionante: ${sub.detail}. Aggiungi il bot come amministratore del canale ${sub.channel}.`}
       </div>
@@ -326,51 +326,59 @@ function Stats() {
   );
 }
 
-// ---------- Crediti Netlify (stima) ----------
+// ---------- Limiti Cloudflare R2 ----------
 function Credits({ say }) {
   const [d, setD] = useState(null);
-  const [bal, setBal] = useState("");
-  const [plan, setPlan] = useState("");
-  const load = () => api("admin/meter").then(setD).catch(() => say("Non riesco a caricare i crediti"));
+  const [busy, setBusy] = useState(false);
+  const load = () => api("admin/meter").then(setD).catch(() => say("Non riesco a caricare i dati R2"));
   useEffect(() => { load(); }, []);
   if (!d) return <p className="hint">Carico…</p>;
-  const save = async (body, msg) => {
-    try { await api("admin/meter", { body }); say(msg); setBal(""); setPlan(""); load(); }
-    catch { say("Salvataggio non riuscito"); }
+  const rescan = async () => {
+    setBusy(true);
+    try { await api("admin/meter", { body: {} }); say("Spazio ricalcolato"); load(); }
+    catch { say("Ricalcolo non riuscito"); }
+    setBusy(false);
   };
+  const fmt = (n) => Math.round(n).toLocaleString("it-IT");
+  const gb = (d.storage?.bytes || 0) / 1073741824;
+  const rows = [
+    ["Spazio occupato", gb, d.limits.gb, gb.toFixed(2) + " GB", d.limits.gb + " GB"],
+    ["Scritture (Class A) questo mese", d.month.a, d.limits.a, fmt(d.month.a), fmt(d.limits.a)],
+    ["Letture (Class B) questo mese", d.month.b, d.limits.b, fmt(d.month.b), fmt(d.limits.b)],
+  ];
   const last = d.days.slice(-14);
-  const max = Math.max(1, ...last.map((x) => x.credits.total));
-  const fmt = (n) => (n >= 100 ? Math.round(n) : n.toFixed(1));
-  const today = d.days[d.days.length - 1];
+  const max = Math.max(1, ...last.map((x) => x.a + x.b));
   return (
     <div>
-      <div className="stat-grid">
-        {[[fmt(d.remaining), d.calibrated ? "Crediti rimasti (allineati)" : "Crediti rimasti (stima)"], [fmt(d.month), "Usati questo mese"], [fmt(today.credits.total), "Usati oggi"], [fmt(d.forecast), "Previsione del mese"]]
-          .map(([n, l]) => <div className="stat" key={l}><b>{n}</b><small>{l}</small></div>)}
+      {rows.map(([l, v, m, vs, ms]) => {
+        const p = Math.min(100, (v / m) * 100);
+        return (
+          <div className="item" key={l}>
+            <b>{l}: {vs} / {ms} ({p.toFixed(p < 10 ? 1 : 0)}%)</b>
+            <div style={{ background: "#2a2a2a", borderRadius: 6, height: 8, marginTop: 6 }}>
+              <div style={{ width: p + "%", height: 8, borderRadius: 6, background: p >= 95 ? "#e23636" : p >= 80 ? "#f0a500" : "#3aa655" }} />
+            </div>
+          </div>
+        );
+      })}
+      <div className="box">
+        Ricevi un messaggio Telegram quando una voce arriva all'{d.warnAt[0]}% e al {d.warnAt[1]}% del limite gratuito (una volta al mese per soglia).
+        <button className="btn" disabled={busy} onClick={rescan}>{busy ? "Calcolo…" : "Ricalcola spazio"}</button>
+        {d.storage && <small> Ultimo calcolo: {new Date(d.storage.at).toLocaleString("it-IT")} · {fmt(d.storage.objects)} file</small>}
       </div>
-      <h2 className="sub">Crediti al giorno, ultimi 14 giorni</h2>
+      <h2 className="sub">Operazioni al giorno (scritture + letture), questo mese</h2>
       <div className="bars">
         {last.map((x) => (
-          <div key={x.d} className="bcol"><span>{fmt(x.credits.total)}</span><i style={{ height: 6 + (x.credits.total / max) * 70 }} /><small>{x.d.slice(8)}/{x.d.slice(5, 7)}</small></div>
+          <div key={x.d} className="bcol"><span>{fmt(x.a + x.b)}</span><i style={{ height: 6 + ((x.a + x.b) / max) * 70 }} /><small>{x.d.slice(8)}/{x.d.slice(5, 7)}</small></div>
         ))}
       </div>
-      <h2 className="sub">Giorno per giorno</h2>
       {[...d.days].reverse().map((x) => (
         <div className="item" key={x.d}>
-          <b>{x.d.slice(8)}/{x.d.slice(5, 7)} · {fmt(x.credits.total)} crediti</b>
-          <small> banda {fmt(x.credits.bw)} · calcolo {fmt(x.credits.comp)} · richieste {fmt(x.credits.rq)}{x.deploys ? ` · deploy ${x.deploys}` : ""} · {x.opens} aperture</small>
+          <b>{x.d.slice(8)}/{x.d.slice(5, 7)} · {fmt(x.a + x.b)} operazioni</b>
+          <small> scritture {fmt(x.a)} · letture {fmt(x.b)} · richieste {fmt(x.req)} · {x.opens} aperture</small>
         </div>
       ))}
-      <h2 className="sub">Allinea al saldo reale</h2>
-      <div className="box">
-        Apri Netlify, nella pagina Billing del team, e copia i crediti disponibili. Scrivili qui: da quel momento il contatore parte da quel numero.
-        <input className="in" type="number" inputMode="decimal" placeholder="Crediti disponibili su Netlify" value={bal} onChange={(e) => setBal(e.target.value)} />
-        <button className="btn red" disabled={bal === ""} onClick={() => save({ balance: Number(bal) }, "Saldo allineato")}>Allinea</button>
-        {d.calibrated && <button className="btn" onClick={() => save({ reset: true }, "Allineamento tolto")}>Torna alla stima</button>}
-        <input className="in" type="number" inputMode="decimal" placeholder={`Crediti del piano al mese (ora ${d.plan})`} value={plan} onChange={(e) => setPlan(e.target.value)} />
-        <button className="btn" disabled={plan === ""} onClick={() => save({ plan: Number(plan) }, "Piano aggiornato")}>Salva piano</button>
-      </div>
-      <p className="hint">È una stima: conta le chiamate al backend e aggiunge una quota fissa per ogni apertura dell'app (circa {d.shell.kb} KB e {d.shell.req} richieste). Tariffe usate: {d.rates.gb} crediti per GB di banda, {d.rates.gbh} per GB-ora di calcolo, {d.rates.req10k} ogni 10.000 richieste, {d.rates.deploy} per deploy. Il ciclo di Netlify può partire un giorno diverso dal primo del mese.</p>
+      <p className="hint">Sono conteggi stimati dal backend (il banda in uscita da R2 è gratuita). Il conteggio parte dal deploy di questa versione e si azzera ogni mese. Per i numeri ufficiali: dashboard Cloudflare → R2 → il tuo bucket → Metrics. Limiti modificabili con le variabili R2_LIMIT_GB, R2_LIMIT_A, R2_LIMIT_B (utile se passi al piano a pagamento).</p>
     </div>
   );
 }
@@ -874,7 +882,7 @@ const matchQ = (m, q) => !q || !q.trim() || nz(m.title + " " + (m.year || "")).i
 const GROUPS = [
   { id: "catalog", label: "Catalogo", tabs: [["media", "Contenuti"], ["cats", "Categorie"], ["timeline", "Timeline"], ["doom", "Doomsday"], ["autolink", "Da collegare"]] },
   { id: "users", label: "Utenti", tabs: [["requests", "Richieste"], ["reports", "Segnalazioni"]] },
-  { id: "data", label: "Dati", tabs: [["stats", "Statistiche"], ["credits", "Crediti"]] },
+  { id: "data", label: "Dati", tabs: [["stats", "Statistiche"], ["credits", "Limiti R2"]] },
   { id: "tools", label: "Strumenti", tabs: [["features", "Funzioni"], ["titles", "Dati titoli"], ["bot", "Bot e backup"]] },
 ];
 const HINTS = {
@@ -886,7 +894,7 @@ const HINTS = {
   requests: "Titoli chiesti dagli utenti. Segnali come fatti quando li aggiungi.",
   reports: "Problemi segnalati dagli utenti sui video.",
   stats: "Utenti, video inviati e titoli più guardati.",
-  credits: "Consumo giornaliero dei crediti Netlify e quanti ne restano.",
+  credits: "Spazio e operazioni del bucket R2 rispetto ai limiti gratuiti.",
   features: "Scegli chi può vedere le statistiche personali e MCU Wrapped.",
   titles: "Durate e date di uscita prese da TMDB.",
   bot: "Backup del catalogo e controllo degli anniversari.",
