@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, imgUrl, art } from "./api.js";
+import { api, imgUrl, art, setLang } from "./api.js";
+import { Logo, LangPick, BRAND } from "./Logos.jsx";
 import { descIds, byRelease } from "./lib/util.js";
 import { I } from "./Icons.jsx";
 import Admin from "./Admin.jsx";
+import Player from "./Player.jsx";
 import { StatsView, WrapView } from "./Stats.jsx";
 import logo from "./logo.jpg";
 import coffeeImg from "./coffee.png";
@@ -146,10 +148,10 @@ function CatTiles({ cats, count, go, home }) {
   );
 }
 
-const Header = ({ onSearch, onBell, unread = 0 }) => (
+const Header = ({ onSearch, onBell, unread = 0, lang = "it" }) => (
   <header className="top">
-    <img src={logo} alt="" />
-    <div className="brand"><b>Marvel Italia</b><small>STREAMING</small></div>
+    <Logo kind={lang} />
+    <div className="brand"><b>{BRAND[lang].name}</b><small>STREAMING</small></div>
     <button className="ico bell" onClick={onBell} aria-label="Notifiche"><I.Bell size={20} />{unread > 0 && <span className="dot">{unread > 9 ? "9+" : unread}</span>}</button>
     <button className="ico" onClick={onSearch} aria-label="Cerca"><I.Search size={20} /></button>
   </header>
@@ -334,6 +336,7 @@ function Detail({ m, user, me, watch, toggle, say, rate, unlock, setSeen, initSe
   const [sid, setSid] = useState(first);
   const openSeason = (id) => { setSid(id); try { localStorage.setItem(savedKey, id); } catch {} };
   const [rep, setRep] = useState(false);
+  const [pl, setPl] = useState(false); // player integrato (beta)
   const season = seasons.find((s) => s.id === sid);
   const seasonEps = season ? season.episodes.filter((e) => e.hasVideo) : [];
   const seasonDone = seasonEps.length > 0 && seasonEps.every((e) => seen(e.id));
@@ -350,6 +353,7 @@ function Detail({ m, user, me, watch, toggle, say, rate, unlock, setSeen, initSe
   const info = soon ? soonInfo(m) : null;
   return (
     <div>
+      {pl && m.player?.url && <Player m={m} url={m.player.url} onClose={() => setPl(false)} />}
       <div className="dhero" style={bg ? { backgroundImage: `url(${bg})` } : {}}><div className="hshade" /></div>
       <div className="page dbody">
         <div className="pills">
@@ -373,6 +377,7 @@ function Detail({ m, user, me, watch, toggle, say, rate, unlock, setSeen, initSe
         <div className="actions">
           {soon && <button className="btn primary" onClick={() => toggle("watchlist", m.id)}><I.Bookmark size={18} fill={inList ? "currentColor" : "none"} /> {inList ? "Ti avviseremo" : "Avvisami"}</button>}
           {!soon && m.type === "movie" && m.hasVideo && <button className="btn primary" onClick={() => watch(m.id)}><I.Play size={18} /> {seen(m.id) ? "Rivedi" : "Guarda"}</button>}
+          {!soon && m.player?.url && <button className="btn primary" onClick={() => setPl(true)}><I.Play size={18} /> Guarda nel player · beta</button>}
           {!soon && m.type === "series" && avail.length > 0 && (
             <button className="btn primary" onClick={() => watch(m.id, (next || avail[0]).id)}>
               <I.Play size={18} /> {next ? (seenN > 0 ? `Continua S${next.sn} · E${next.number}` : "Inizia a guardare") : "Rivedi dall'inizio"}
@@ -1017,13 +1022,24 @@ export default function App() {
   const load = async () => {
     try {
       const me = await api("me");
-      if (!me.subscribed) return setBoot({ me, gate: true });
+      if (me.langOn && !me.lang) return setBoot({ me, pick: true }); // prima volta: scelta della lingua
+      let l = me.langOn && me.lang ? me.lang : "it";
+      if (me.isAdmin) { try { l = sessionStorage.getItem("mv_adminlang") || l; } catch {} } // l'admin può passare da un catalogo all'altro
+      setLang(l);
+      if (!me.subscribed) return setBoot({ me, lang: l, gate: true });
       const cat = await api("catalog");
-      setBoot({ me, ...cat });
+      setBoot({ me, lang: l, ...cat });
     } catch (e) {
       if (e.data?.error === "not_subscribed") api("me").then((me) => setBoot({ me, gate: true })).catch(() => {});
       else setBoot({ error: e.message });
     }
+  };
+
+  const pickLang = async (l) => {
+    try { await api("lang", { body: { lang: l } }); } catch { return say("Error · Errore"); }
+    try { sessionStorage.removeItem("mv_adminlang"); } catch {}
+    setBoot({ loading: true });
+    load();
   };
 
   useEffect(() => {
@@ -1138,6 +1154,7 @@ export default function App() {
         <p>{boot.error === "unauthorized" ? "Apri questa app da Telegram." : "Errore: " + boot.error}</p>
       </div>
     );
+  else if (boot.pick) body = <LangPick onPick={pickLang} />;
   else if (boot.gate) {
     const ch = boot.me?.channel || "";
     const link = `https://t.me/${ch.replace("@", "")}`;
@@ -1226,21 +1243,26 @@ export default function App() {
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 
+  const sk = boot.pick ? "neutral" : boot.lang || "it"; // quale logo mostrare
   const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ...(features.timeline ? [["timeline", I.Clock, "Timeline"]] : []), ...(features.doom && Date.now() <= DOOM_OPEN_UNTIL ? [["doom", I.Mask, "Doomsday"]] : []), ["profile", I.User, "Profilo"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
   return (
     <>
       {splash && (
-        <div className={"splash" + (splash === "out" ? " out" : "")} aria-hidden="true">
-          <div className="splash-glow" />
-          <img src={logo} alt="" />
-          <div className="tri" />
-          <p className="splash-tx">Marvel Italia Streaming</p>
+        <div className={"splash" + (splash === "out" ? " out" : "") + (boot.loading ? "" : " k-" + sk)} aria-hidden="true">
+          {!boot.loading && (
+            <>
+              <div className="splash-glow" />
+              <Logo kind={sk} />
+              <div className={"tri " + (sk === "it" ? "" : sk)} />
+              <p className="splash-tx">{BRAND[sk].full}</p>
+            </>
+          )}
         </div>
       )}
-      {!boot.error && !boot.gate && <Header onSearch={() => tab({ n: "search" })} onBell={openBell} unread={unread} />}
+      {!boot.error && !boot.gate && !boot.pick && <Header onSearch={() => tab({ n: "search" })} onBell={openBell} unread={unread} lang={boot.lang || "it"} />}
       {bell && <NotifSheet notifs={notifs} media={media} readAt={bell.prev} onOpen={openNotif} onClear={clearNotifs} onClose={() => setBell(null)} />}
       {body}
-      {!boot.error && !boot.gate && (
+      {!boot.error && !boot.gate && !boot.pick && (
         <nav className={"nav" + (items.length > 5 ? " many" : "")}>
           {items.map(([n, Ic, l]) => (
             <button key={n} className={view.n === n ? "on" : ""} onClick={() => tab({ n })}><span><Ic size={21} /></span><small>{l}</small></button>

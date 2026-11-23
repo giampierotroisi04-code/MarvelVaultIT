@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, imgUrl } from "./api.js";
+import { api, imgUrl, getLang, setLang } from "./api.js";
 import { I } from "./Icons.jsx";
 import { parseLink, buildLink, flatTree, descIds, byRelease } from "./lib/util.js";
 
@@ -130,6 +130,7 @@ function MediaForm({ init, cats, onDone, onCancel }) {
     if (!m.title.trim()) return alert("Inserisci un titolo");
     const bad = [m.source, ...(m.seasons || []).flatMap((s) => s.episodes.map((e) => e.source))].some((x) => x?.link && !x.messageId);
     if (bad) return alert("C'è un link non valido");
+    if (m.player?.url && !/^https:\/\//.test(m.player.url)) return alert("L'indirizzo del player deve iniziare con https://");
     try { await api("admin/media", { body: m }); } catch (e) { return alert(e.data?.error || "Errore nel salvataggio"); }
     onDone();
   };
@@ -180,6 +181,14 @@ function MediaForm({ init, cats, onDone, onCancel }) {
           <h2>Video</h2>
           <input className="in" placeholder="Link del messaggio (https://t.me/c/…/45)" value={m.source?.link || ""} onChange={(e) => set({ source: e.target.value ? srcFrom(e.target.value) : null })} />
           <button className="btn small" onClick={() => verify(m.source?.link)}><I.Eye size={16} /> Verifica link</button>
+          <h2>Player integrato (beta)</h2>
+          <div className="box">
+            <input className="in" placeholder="Indirizzo del video su R2 (https://video.tuodominio.it/film.mp4)" value={m.player?.url || ""} onChange={(e) => set({ player: { mode: "off", ...(m.player || {}), url: e.target.value.trim() } })} />
+            <div className="chips">
+              {[["off", "Spento"], ["admin", "Solo admin (beta)"], ["all", "Tutti"]].map(([v, l]) => <button key={v} className={"chip" + ((m.player?.mode || "off") === v ? " on" : "")} onClick={() => set({ player: { url: "", ...(m.player || {}), mode: v } })}>{l}</button>)}
+            </div>
+            <p className="hint">Il video resta su R2: l'app lo legge e basta, non lo carica né lo copia. Il punto in cui l'utente si ferma resta solo sul suo dispositivo (e nel cloud personale di Telegram).</p>
+          </div>
         </>
       ) : (
         <>
@@ -906,6 +915,14 @@ export default function Admin({ say, onChange }) {
   useEffect(() => setQ(""), [tab]);
   const [db, setDb] = useState(null);
   const [form, setForm] = useState(null);
+  const [lang, setL] = useState(getLang()); // quale catalogo stai modificando (italiano o inglese)
+  const switchLang = (l) => {
+    if (l === lang) return;
+    setLang(l); setL(l); setDb(null); setForm(null);
+    try { sessionStorage.setItem("mv_adminlang", l); } catch {}
+    api("admin/catalog").then(setDb).catch(() => say("Accesso negato"));
+    onChange?.();
+  };
   const shown = (db?.media || []).filter((m) => matchQ(m, q)).sort((a, b) => b.createdAt - a.createdAt);
   const reload = () => api("admin/catalog").then((d) => { setDb(d); onChange?.(); });
   useEffect(() => { api("admin/catalog").then(setDb).catch(() => say("Accesso negato")); }, []);
@@ -929,7 +946,7 @@ export default function Admin({ say, onChange }) {
     if (tab === "cats") return <Cats cats={db.categories} media={db.media} reload={reload} />;
     if (tab === "stats") return <Stats />;
     if (tab === "credits") return <Credits say={say} />;
-    if (tab === "features") return <><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Vis k="coffee" label="Card BuyMeACoffee" def="off" features={db.features} say={say} onDone={reload} /><Coffee coffee={db.coffee} say={say} onDone={reload} /></>;
+    if (tab === "features") return <><Vis k="lang" label="Versione inglese (scelta lingua per tutti)" def="off" features={db.features} say={say} onDone={reload} /><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Vis k="coffee" label="Card BuyMeACoffee" def="off" features={db.features} say={say} onDone={reload} /><Coffee coffee={db.coffee} say={say} onDone={reload} /></>;
     if (tab === "titles") return <><Runtimes media={db.media} say={say} onDone={reload} /><TmdbDates say={say} onDone={reload} /></>;
     if (tab === "bot") return <><Backup say={say} /><Anniv say={say} /></>;
     if (tab === "timeline") return <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></>;
@@ -953,6 +970,9 @@ export default function Admin({ say, onChange }) {
   return (
     <div className="page">
       <h1>Admin <span className="badge">ADMIN</span></h1>
+      <div className="chips" style={{ marginBottom: 10 }}>
+        {[["it", "🇮🇹 Catalogo italiano"], ["en", "🇬🇧 Catalogo inglese"]].map(([v, l]) => <button key={v} className={"chip" + (lang === v ? " on" : "")} onClick={() => switchLang(v)}>{l}</button>)}
+      </div>
       <div className="agroups">
         {GROUPS.map((g) => {
           const c = g.id === "users" ? n.req + n.rep : g.id === "catalog" ? n.link : 0;

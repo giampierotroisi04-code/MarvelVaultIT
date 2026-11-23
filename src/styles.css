@@ -11,7 +11,7 @@ button{font-family:inherit;cursor:pointer}
 .ptitle{font-size:26px;margin:4px 0 14px}
 /* header */
 .top{position:sticky;top:0;z-index:15;display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(9,9,13,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--bd)}
-.top img{width:36px;height:36px;border-radius:50%}
+.top .lg{width:36px;height:36px;border-radius:50%}
 .brand{flex:1;display:flex;flex-direction:column;line-height:1.1}
 .brand b{font-size:16px;font-weight:800;letter-spacing:-.01em}
 .brand small{font-size:10px;letter-spacing:.3em;color:var(--red);font-weight:700}
@@ -100,8 +100,8 @@ button{font-family:inherit;cursor:pointer}
 .splash{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;overflow:hidden}
 .splash.out{pointer-events:none;animation:splashOut .55s cubic-bezier(.4,0,.2,1) forwards}
 .splash-glow{position:absolute;left:50%;top:50%;width:150vmax;height:150vmax;margin:-75vmax 0 0 -75vmax;pointer-events:none;background:radial-gradient(circle at 38% 42%,rgba(227,22,28,.22),transparent 28%),radial-gradient(circle at 62% 58%,rgba(0,146,70,.18),transparent 28%);animation:splashGlow .9s ease-out backwards,splashBreath 3.2s ease-in-out .9s infinite}
-.splash img{position:relative;width:56vw;max-width:260px;border-radius:50%;animation:splashLogo .95s cubic-bezier(.22,1,.36,1) backwards;transition:transform .55s cubic-bezier(.4,0,.2,1);will-change:transform,opacity}
-.splash.out img{transform:scale(1.1)}
+.splash .lg{position:relative;width:56vw;max-width:260px;border-radius:50%;animation:splashLogo .95s cubic-bezier(.22,1,.36,1) backwards;transition:transform .55s cubic-bezier(.4,0,.2,1);will-change:transform,opacity}
+.splash.out .lg{transform:scale(1.1)}
 .splash .tri{position:relative;width:56vw;max-width:260px;border-radius:3px;transform-origin:left center;animation:splashBar .95s cubic-bezier(.65,0,.35,1) .4s backwards;will-change:transform}
 .splash-tx{position:relative;margin:-6px 0 0;font-size:11px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--tx2);animation:splashTx .8s cubic-bezier(.22,1,.36,1) .65s backwards}
 @keyframes splashLogo{from{opacity:0;transform:translateY(10px) scale(.9)}to{opacity:1;transform:none}}
@@ -110,7 +110,7 @@ button{font-family:inherit;cursor:pointer}
 @keyframes splashGlow{from{opacity:0}to{opacity:1}}
 @keyframes splashBreath{50%{opacity:.55}}
 @keyframes splashOut{to{opacity:0}}
-@media (prefers-reduced-motion:reduce){.splash *,.splash{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important}.splash img{transition:none}}
+@media (prefers-reduced-motion:reduce){.splash *,.splash{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important}.splash .lg{transition:none}}
 
 /* ---- Palette e tricolore Marvel Italia ---- */
 h1,h2,.brand b{font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;letter-spacing:.04em;text-transform:uppercase}
@@ -539,3 +539,15 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .coffee-tx small{font-size:12px;color:var(--tx2)}
 .coffee-go>svg{flex:none;color:var(--tx2)}
 .coffee-x{position:absolute;top:6px;right:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;color:var(--tx2);border-radius:50%}
+
+/* versione inglese / scelta lingua */
+.splash .lg{aspect-ratio:1}
+.splash.k-en .splash-glow{background:radial-gradient(circle at 38% 42%,rgba(1,33,105,.5),transparent 28%),radial-gradient(circle at 62% 58%,rgba(200,16,46,.22),transparent 28%)}
+.splash.k-neutral .splash-glow{background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.09),transparent 34%)}
+.tri.en{background:linear-gradient(90deg,#012169 33.3%,#fff 33.3% 66.6%,#C8102E 66.6%)}
+.tri.neutral{background:linear-gradient(90deg,#3a3a3e,#9a9aa3)}
+.langpick{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
+.langpick .lg{width:48vw;max-width:220px;margin-bottom:8px}
+.langpick h1{font-size:22px}
+.langpick p{color:var(--tx2);font-size:14px;margin-bottom:6px}
+.langpick .btn{width:100%;max-width:320px;justify-content:center;font-size:17px;padding:14px}

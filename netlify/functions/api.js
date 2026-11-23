@@ -1,5 +1,6 @@
 import { getStore } from "@netlify/blobs";
 import { getBucket, takeOps } from "../../worker/blobs-shim.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import crypto from "node:crypto";
 import { parseLink, buildLink, BOT_USERNAME } from "../../src/lib/util.js";
 import { runAnniversaries } from "../../src/lib/anniv.js";
@@ -179,8 +180,16 @@ function limited(id) {
 }
 
 // ---------- Database (Cloudflare R2, via worker/blobs-shim.js) ----------
-const getDb = async () => (await store().get("catalog", { type: "json" })) || { media: [], categories: [] };
-const saveDb = (db) => store().setJSON("catalog", db);
+// Catalogo per lingua: l'italiano resta "catalog" (invariato), l'inglese è un archivio a parte, "catalog-en".
+// La lingua della richiesta viaggia in un contesto (AsyncLocalStorage), così tutte le funzioni che usano getDb/saveDb funzionano per entrambe.
+const als = new AsyncLocalStorage();
+const curLang = () => als.getStore()?.lang || "it";
+const dbKey = () => (curLang() === "en" ? "catalog-en" : "catalog");
+const getDb = async () => (await store().get(dbKey(), { type: "json" })) || { media: [], categories: [] };
+const saveDb = (db) => store().setJSON(dbKey(), db);
+// Interruttore "versione inglese": off (nessuno) · admin (solo admin) · all (tutti). Sta in un file suo, sempre lo stesso per le due lingue.
+const getLangFlag = async () => (await store().get("lang:flag", { type: "json" }).catch(() => null))?.value || "off";
+const langOn = (flag, isAdmin) => flag === "all" || (flag === "admin" && isAdmin);
 const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const toDay = (ts) => new Date(ts).toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const who = (u) => (u.username ? "@" + u.username : u.first_name || u.name || "utente");
@@ -304,6 +313,13 @@ const pub = (m) => ({
     episodes: s.episodes.filter((e) => e.visible !== false).map((e) => ({ ...e, source: undefined, hasVideo: !!e.source })),
   })),
 });
+
+// Player integrato (beta): l'indirizzo del video esce solo per chi ha il permesso (spento / solo admin / tutti)
+const playerView = (m, isAdmin) => {
+  const p = m.player;
+  if (m.type !== "movie" || !p || !/^https:\/\//.test(p.url || "")) return undefined;
+  return p.mode === "all" || (p.mode === "admin" && isAdmin) ? { url: p.url } : undefined;
+};
 
 function deleteCategory(db, id, mode) {
   const cat = db.categories.find((c) => c.id === id);
@@ -583,7 +599,7 @@ async function restoreBackup(msg) {
     const data = await fetch(`https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${f.result.file_path}`).then((r) => r.json());
     const c = data?.catalog;
     if (!c || !Array.isArray(c.media) || !Array.isArray(c.categories)) return say("File non valido: non è un backup.");
-    await store().setJSON("catalog-prev", await getDb()); // copia di sicurezza di quello che stai sostituendo
+    await store().setJSON(dbKey() + "-prev", await getDb()); // copia di sicurezza di quello che stai sostituendo
     await saveDb(c);
     if (data.ratings) await store().setJSON("ratings", data.ratings);
     if (data.inbox) await saveInbox(data.inbox);
@@ -667,7 +683,9 @@ const handler = async (req) => {
   if (a === "me") {
     const sub = isAdmin ? { ok: true } : await isSubscribed(user.id);
     if (!isAdmin) await touch(user).catch(() => {});
-    return json({ user: { id: user.id, name: user.first_name }, isAdmin, botUsername: String(process.env.BOT_USERNAME || BOT_USERNAME).trim().replace(/^@/, ""), appName: process.env.BOT_APP_NAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
+    const on = langOn(await getLangFlag(), isAdmin); // la scelta lingua compare solo a chi ha la funzione attiva
+    const lang = on ? (await getUser(user.id)).lang || null : null;
+    return json({ user: { id: user.id, name: user.first_name }, isAdmin, langOn: on, lang, botUsername: String(process.env.BOT_USERNAME || BOT_USERNAME).trim().replace(/^@/, ""), appName: process.env.BOT_APP_NAME || "", subscribed: sub.ok, channel: process.env.REQUIRED_CHANNEL || "" });
   }
 
   // foto profilo più recente, letta da Telegram (data URL, perché <img> non può inviare l'header di autenticazione)
@@ -693,7 +711,7 @@ const handler = async (req) => {
     const st = await getStats().catch(() => ({ media: {} }));
     const feats = Object.fromEntries(["timeline", "doom", "stats", "wrap", "coffee"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" || k === "coffee" ? "off" : "admin"); return [k, k === "stats" || k === "doom" || v === "all" || (v === "admin" && isAdmin)]; })); // statistiche e Doomsday sono sempre pubbliche
     return json({
-      media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), views: st.media?.[m.id]?.s || 0, rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
+      media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), player: playerView(m, isAdmin), views: st.media?.[m.id]?.s || 0, rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
       categories: db.categories.filter((x) => x.visible !== false),
       // novità con interruttore: "off" nascosta, "admin" solo admin (default; Wrap e Caffè partono nascosti), "all" tutti
       features: feats,
@@ -719,6 +737,17 @@ const handler = async (req) => {
     u.settings = { ...(u.settings || {}), [key]: val };
     await store().setJSON(`user:${user.id}`, u);
     return json(u);
+  }
+
+  // scelta della lingua (una volta per utente; si può cambiare dal Profilo)
+  if (a === "lang" && req.method === "POST") {
+    const { lang } = await req.json();
+    if (!["it", "en"].includes(lang)) return json({ error: "bad request" }, 400);
+    if (!langOn(await getLangFlag(), isAdmin)) return json({ error: "forbidden" }, 403);
+    const u = await getUser(user.id);
+    u.lang = lang;
+    await store().setJSON(`user:${user.id}`, u);
+    return json({ ok: true, lang });
   }
 
   // foto del Wrapped: l'app la crea sul telefono, il bot la manda nella chat (da lì si salva o si inoltra)
@@ -891,7 +920,10 @@ const handler = async (req) => {
       const days = Object.entries(d.days).sort().map(([k, v]) => ({ d: `${month}-${k}`, ...v }));
       return json({ limits: R2_LIMITS(), warnAt: WARN_AT, month: { a: d.a, b: d.b, req: d.req }, storage: st, days, alerts: d.alerts });
     }
-    if (b === "catalog") return json(await getDb());
+    if (b === "catalog") {
+      const db = await getDb();
+      return json({ ...db, lang: curLang(), features: { ...(db.features || {}), lang: await getLangFlag() } });
+    }
     if (b === "autolink" && req.method === "GET") return json(await getPending());
     if (b === "autolink-confirm" && req.method === "POST") {
       const { id, mediaId, episodeId, createFromTmdb } = await req.json();
@@ -949,6 +981,9 @@ const handler = async (req) => {
         categoryIds: body.categoryIds || [],
         seasons: body.type === "series" ? body.seasons || [] : [],
         source: body.type === "movie" ? body.source || null : null,
+        player: body.type === "movie" && /^https:\/\//.test(body.player?.url || "")
+          ? { url: body.player.url.trim(), mode: ["off", "admin", "all"].includes(body.player.mode) ? body.player.mode : "off" }
+          : undefined,
       };
       if (m.featured) db.media.forEach((x) => { if (x.id !== m.id) x.featured = false; }); // un solo "in evidenza"
       i >= 0 ? (db.media[i] = m) : db.media.push(m);
@@ -1120,6 +1155,11 @@ const handler = async (req) => {
 
     if (b === "features" && req.method === "POST") {
       const { key, value } = await req.json();
+      if (key === "lang") { // versione inglese: vale per tutta l'app, non per un solo catalogo
+        if (!["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
+        await store().setJSON("lang:flag", { value });
+        return json({ ok: true });
+      }
       if (!["timeline", "doom", "stats", "wrap", "coffee"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
       const db = await getDb();
       db.features = { ...(db.features || {}), [key]: value };
@@ -1290,8 +1330,19 @@ const handler = async (req) => {
   return json({ error: "not_found" }, 404);
 };
 
+// Lingua della richiesta: l'app manda x-lang. L'inglese vale per gli admin (che preparano il catalogo) e, a funzione pubblica, per tutti.
+const langOf = async (req) => {
+  if (req.headers.get("x-lang") !== "en") return "it";
+  const u = checkInitData(req.headers.get("x-init-data"));
+  if (!u) return "it";
+  return admins().includes(String(u.id)) || (await getLangFlag()) === "all" ? "en" : "it";
+};
+
 export default async (req, context) => {
-  const res = await handler(req, context);
-  try { await meterTrack(req, res); } catch {} // il tracker non deve mai rompere una risposta
-  return res;
+  const lang = await langOf(req);
+  return als.run({ lang }, async () => {
+    const res = await handler(req, context);
+    try { await meterTrack(req, res); } catch {} // il tracker non deve mai rompere una risposta
+    return res;
+  });
 };
