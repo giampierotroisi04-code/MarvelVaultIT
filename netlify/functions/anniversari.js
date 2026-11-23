@@ -21,5 +21,9 @@ const tg = (method, body) =>
 export default async () => {
   const admins = (process.env.ADMIN_IDS || "").split(",").map((x) => x.trim()).filter(Boolean);
   if (!process.env.BOT_TOKEN || !admins.length) return;
-  await runAnniversaries({ store: getStore({ name: "vault", consistency: "strong" }), tg, admins, site: process.env.SITE_URL || "" });
+  const store = getStore({ name: "vault", consistency: "strong" });
+  await runAnniversaries({ store, tg, admins, site: process.env.SITE_URL || "" });
+  // catalogo inglese: gli avvisi arrivano comunque solo agli admin, e solo se la versione inglese non è spenta
+  const flag = (await store.get("lang:flag", { type: "json" }).catch(() => null))?.value;
+  if (flag === "admin" || flag === "all") await runAnniversaries({ store, tg, admins, site: process.env.SITE_URL || "", lang: "en" });
 };

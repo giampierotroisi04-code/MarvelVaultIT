@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { computeStats, fmtHours, fmt1 } from "./lib/stats.js";
 import { makeWrapImage } from "./lib/wrapimg.js";
-import { api, art } from "./api.js";
+import { api, art, getLang } from "./api.js";
+import { tr } from "./i18n.js";
 import { I } from "./Icons.jsx";
-import logo from "./logo.jpg";
+import { logoUrl } from "./Logos.jsx";
 
 const WRAP_YEAR = 2026;
 const names = (rows) => rows.map((r) => r.m.title).join(" · ");
@@ -118,14 +119,14 @@ export function WrapView({ media, user, me, categories = [], onClose }) {
   useEffect(() => {
     if (!last || pic) return;
     let alive = true;
-    makeWrapImage({ s, name: who, year: WRAP_YEAR, bot: me?.botUsername, logo, avatar })
+    makeWrapImage({ s, name: who, year: WRAP_YEAR, bot: me?.botUsername, logo: logoUrl(getLang()), avatar })
       .then((blob) => { if (!alive) return; const url = URL.createObjectURL(blob); urlRef.current = url; setPic({ blob, url }); })
       .catch(() => alive && setMsg("Non sono riuscito a creare la foto"));
     return () => { alive = false; };
   }, [last, avatar]);
   useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current); }, []);
 
-  const text = `Il mio MCU Wrapped ${WRAP_YEAR}: ${fmtHours(s.minutes)} guardate, ${s.seen} progetti visti. ${m.card}`;
+  const text = getLang() === "en" ? `My MCU Wrapped ${WRAP_YEAR}: ${fmtHours(s.minutes)} watched, ${s.seen} titles seen. ${tr(m.card)}` : `Il mio MCU Wrapped ${WRAP_YEAR}: ${fmtHours(s.minutes)} guardate, ${s.seen} progetti visti. ${m.card}`;
   const shareText = () => {
     const url = `https://t.me/share/url?url=${encodeURIComponent(`https://t.me/${me?.botUsername || ""}`)}&text=${encodeURIComponent(text)}`;
     window.Telegram?.WebApp?.openTelegramLink ? window.Telegram.WebApp.openTelegramLink(url) : window.open(url, "_blank");
@@ -160,7 +161,7 @@ export function WrapView({ media, user, me, categories = [], onClose }) {
     <div className={"wrap wrap-" + sl.k} style={sl.ac ? { "--ac": sl.ac } : undefined}>
       {sl.bg && <div className="wrap-bg" key={"bg" + i} style={{ backgroundImage: `url(${sl.bg})` }} />}
       <div className="wrap-dots">{slides.map((_, n) => <i key={n} className={n <= i ? "on" : ""} />)}</div>
-      <div className="wrap-head"><img src={logo} alt="" /><span>MCU WRAPPED {WRAP_YEAR}</span></div>
+      <div className="wrap-head"><img src={logoUrl(getLang())} alt="" /><span>MCU WRAPPED {WRAP_YEAR}</span></div>
       <button className="wrap-x" onClick={onClose} aria-label="Chiudi"><I.X size={22} /></button>
       {!last && <><button className="wrap-tap l" aria-label="Indietro" onClick={prev} /><button className="wrap-tap r" aria-label="Avanti" onClick={next} /></>}
       <div className="wrap-body" key={i}>

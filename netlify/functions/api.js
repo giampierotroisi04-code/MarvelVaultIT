@@ -123,8 +123,8 @@ const flat = (m) =>
 
 function keyboard(m, ep) {
   const rows = [];
-  if (m.type === "series" && ep) rows.push([{ text: "⏭ Prossimo episodio", callback_data: `n:${m.id}:${ep.id}` }]);
-  rows.push([{ text: "📋 Catalogo", web_app: { url: SITE } }]);
+  if (m.type === "series" && ep) rows.push([{ text: L("⏭ Prossimo episodio", "⏭ Next episode"), callback_data: `n:${m.id}:${ep.id}` }]);
+  rows.push([{ text: L("📋 Catalogo", "📋 Catalog"), web_app: { url: SITE } }]);
   return { inline_keyboard: rows };
 }
 
@@ -189,6 +189,13 @@ const getDb = async () => (await store().get(dbKey(), { type: "json" })) || { me
 const saveDb = (db) => store().setJSON(dbKey(), db);
 // Interruttore "versione inglese": off (nessuno) · admin (solo admin) · all (tutti). Sta in un file suo, sempre lo stesso per le due lingue.
 const getLangFlag = async () => (await store().get("lang:flag", { type: "json" }).catch(() => null))?.value || "off";
+const L = (it, en) => (curLang() === "en" ? en : it); // testo per lingua (bot, messaggi)
+const TM = () => (curLang() === "en" ? "en-US" : "it-IT"); // lingua dei dati TMDB
+// lingua scelta da un utente (per il bot): italiano se la funzione non è attiva per lui
+const userLang = async (uid) => {
+  if (!langOn(await getLangFlag(), admins().includes(String(uid)))) return "it";
+  return (await getUser(uid))?.lang === "en" ? "en" : "it";
+};
 const langOn = (flag, isAdmin) => flag === "all" || (flag === "admin" && isAdmin);
 const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const toDay = (ts) => new Date(ts).toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
@@ -508,7 +515,7 @@ async function tryCreateSeries(db, text) {
     .split(" ").filter((w) => w && !NOISE.has(w) && !/^\d{3,4}p$/.test(w)).join(" ");
   const cand = String(text).split("\n").map(clean).find((c) => c.length >= 2) || "";
   if (cand.length < 2) return { sure: false, reason: "Titolo non riconosciuto nella didascalia" };
-  const r = await fetch(`https://api.themoviedb.org/3/search/tv?api_key=${key}&language=it-IT&query=${encodeURIComponent(cand)}`).then((x) => x.json()).catch(() => ({}));
+  const r = await fetch(`https://api.themoviedb.org/3/search/tv?api_key=${key}&language=${TM()}&query=${encodeURIComponent(cand)}`).then((x) => x.json()).catch(() => ({}));
   const results = r.results || [], sc = squash(cand);
   const exact = results.filter((x) => squash(x.name) === sc || squash(x.original_name) === sc);
   if (exact.length === 1) return buildSeries(db, exact[0], se);
@@ -535,11 +542,27 @@ function applySource(db, mediaId, episodeId, src) {
 async function channelAllowed(chat) {
   const keys = [String(chat.id), chat.username ? "@" + chat.username : ""].filter(Boolean).map((x) => x.toLowerCase());
   const env = (process.env.AUTOLINK_CHANNELS || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
-  const list = env.length ? env : allSources(await getDb()).map((x) => String(x.src.channelId).toLowerCase());
+  const list = env.length ? env : (await Promise.all(["catalog", "catalog-en"].map((k) => store().get(k, { type: "json" }).catch(() => null)))).flatMap((d) => (d ? allSources(d) : [])).map((x) => String(x.src.channelId).toLowerCase());
   return keys.some((k) => list.includes(k));
 }
 
+// Lingua di un post del canale: se nella didascalia (o nel nome del file) c'è ENG / ENGLISH o una bandiera inglese va nel catalogo inglese.
+// "SUB ENG" (sottotitoli) non conta e se c'è anche ITA vince l'italiano. I canali in AUTOLINK_CHANNELS_EN sono sempre inglesi.
+function postLang(chat, text) {
+  const keys = [String(chat.id), chat.username ? "@" + chat.username : ""].filter(Boolean).map((x) => x.toLowerCase());
+  const en = (process.env.AUTOLINK_CHANNELS_EN || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (keys.some((k) => en.includes(k))) return "en";
+  const t = String(text).replace(/(^|[^a-z])subs?[^a-z]*(eng|english)(?![a-z])/gi, " ").replace(/(^|[^a-z])(eng|english)[^a-z]*subs?(?![a-z])/gi, " ");
+  if (/(^|[^a-z])ita(liano)?(?![a-z])/i.test(t)) return "it";
+  return /(^|[^a-z])(eng|english)(?![a-z])|🇬🇧|🇺🇸/i.test(t) ? "en" : "it";
+}
+
 async function channelPost(post) {
+  const text = post.caption || post.video?.file_name || post.document?.file_name || "";
+  return als.run({ lang: postLang(post.chat, text) }, () => channelPostIn(post));
+}
+
+async function channelPostIn(post) {
   const hasFile = post.video || post.document || post.animation || post.video_note;
   if (!hasFile) return;
   if (!(await channelAllowed(post.chat))) return;
@@ -561,17 +584,17 @@ async function channelPost(post) {
     const chk = await getDb(), mm = chk.media.find((x) => x.id === r.mediaId);
     const saved = r.episodeId ? (mm?.seasons || []).some((x) => x.episodes.some((e) => e.id === r.episodeId && e.source?.messageId === src.messageId)) : mm?.source?.messageId === src.messageId;
     const p = await getPending();
-    p.recent.push({ label: r.label, link: src.link, at: Date.now(), saved });
+    p.recent.push({ lang: curLang(), label: r.label, link: src.link, at: Date.now(), saved });
     await savePending(p);
     note = saved ? `${r.createdSeries ? "🆕 Serie e episodio creati da TMDB e collegati (ricorda di assegnare la categoria)" : r.created ? "🆕 Episodio creato da TMDB e collegato" : "✅ Collegato e salvato"}:\n${r.label}` : `⚠️ Collegato ma NON salvato:\n${r.label}`;
   } else {
     const p = await getPending();
     if (p.items.some((x) => x.messageId === src.messageId && String(x.channelId) === String(channelId))) return;
-    p.items.push({ id: uid(), ...src, text: text.slice(0, 200), mediaId: r.mediaId || null, episodeId: r.episodeId || null, tmdbSuggest: r.tmdbSuggest || null, create: r.tmdbSuggest ? r.create : null, label: r.label || "", reason: r.reason || "", createdAt: Date.now() });
+    p.items.push({ id: uid(), lang: curLang(), ...src, text: text.slice(0, 200), mediaId: r.mediaId || null, episodeId: r.episodeId || null, tmdbSuggest: r.tmdbSuggest || null, create: r.tmdbSuggest ? r.create : null, label: r.label || "", reason: r.reason || "", createdAt: Date.now() });
     await savePending(p);
     note = `⏳ Da confermare in Admin → Da collegare:\n«${text.slice(0, 80)}»${r.reason ? "\n" + r.reason : ""}`;
   }
-  await Promise.all(admins().map((id) => tg("sendMessage", { chat_id: id, text: note }).catch(() => {})));
+  await Promise.all(admins().map((id) => tg("sendMessage", { chat_id: id, text: (curLang() === "en" ? "🇬🇧 EN · " : "") + note }).catch(() => {})));
 }
 
 
@@ -613,6 +636,14 @@ async function bot(req) {
     return json({ ok: false }, 403);
   try {
     const u = await req.json();
+    const uid = u.message?.from?.id || u.callback_query?.from?.id;
+    const lang = uid ? await userLang(uid) : "it"; // chi ha scelto l'inglese riceve testi e catalogo inglesi
+    await als.run({ lang }, () => botUpdate(u));
+  } catch (e) { console.error("bot error", e); }
+  return json({ ok: true });
+}
+
+async function botUpdate(u) {
     if (u.channel_post) await channelPost(u.channel_post);
     const msg = u.message;
     if (msg?.document && admins().includes(String(msg.from.id)) && /^\/ripristina/i.test(msg.caption || "")) await restoreBackup(msg);
@@ -621,8 +652,8 @@ async function bot(req) {
       if (msg.text.startsWith("/start"))
         await tg("sendMessage", {
           chat_id: chat,
-          text: "🦸 Benvenuto in MARVEL ITALIA STREAMING!\nApri il catalogo qui sotto.",
-          reply_markup: { inline_keyboard: [[{ text: "▶ Apri Marvel Italia Streaming", web_app: { url: SITE } }]] },
+          text: L("🦸 Benvenuto in MARVEL ITALIA STREAMING!\nApri il catalogo qui sotto.", "🦸 Welcome to MARVEL ENGLISH STREAMING!\nOpen the catalog below."),
+          reply_markup: { inline_keyboard: [[{ text: L("▶ Apri Marvel Italia Streaming", "▶ Open Marvel English Streaming"), web_app: { url: SITE } }]] },
         });
       else if (msg.text.startsWith("/admin") && admins().includes(String(msg.from.id)))
         await tg("sendMessage", {
@@ -639,18 +670,16 @@ async function bot(req) {
       const eps = m ? flat(m) : [];
       const i = eps.findIndex((e) => e.id === eid);
       const next = i >= 0 ? eps[i + 1] : null;
-      if (!next) await tg("answerCallbackQuery", { callback_query_id: cb.id, text: "Era l'ultimo episodio 🎬" });
-      else if (limited(cb.from.id)) await tg("answerCallbackQuery", { callback_query_id: cb.id, text: "Piano! Riprova tra poco" });
+      if (!next) await tg("answerCallbackQuery", { callback_query_id: cb.id, text: L("Era l'ultimo episodio 🎬", "That was the last episode 🎬") });
+      else if (limited(cb.from.id)) await tg("answerCallbackQuery", { callback_query_id: cb.id, text: L("Piano! Riprova tra poco", "Easy! Try again shortly") });
       else if (!admins().includes(String(cb.from.id)) && !(await isSubscribed(cb.from.id)).ok)
-        await tg("answerCallbackQuery", { callback_query_id: cb.id, text: "Iscriviti al canale per continuare", show_alert: true });
+        await tg("answerCallbackQuery", { callback_query_id: cb.id, text: L("Iscriviti al canale per continuare", "Join the channel to continue"), show_alert: true });
       else {
         await tg("answerCallbackQuery", { callback_query_id: cb.id });
         const r = await sendVideo(cb.from.id, m, next);
         if (r.ok && !admins().includes(String(cb.from.id))) await recordSend(cb.from, m).catch(() => {});
       }
     }
-  } catch (e) { console.error("bot error", e); }
-  return json({ ok: true });
 }
 
 // ---------- Router ----------
@@ -762,7 +791,7 @@ const handler = async (req) => {
     const fd = new FormData();
     fd.append("chat_id", String(user.id));
     fd.append("photo", new Blob([Buffer.from(m[2], "base64")], { type: "image/" + m[1] }), "mcu-wrapped." + (m[1] === "png" ? "png" : "jpg"));
-    fd.append("caption", "Il tuo MCU Wrapped 🔥 Salvalo o inoltralo a chi vuoi!");
+    fd.append("caption", L("Il tuo MCU Wrapped 🔥 Salvalo o inoltralo a chi vuoi!", "Your MCU Wrapped 🔥 Save it or forward it to anyone you like!"));
     const r = await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendPhoto`, { method: "POST", body: fd }).then((x) => x.json()).catch(() => ({ ok: false }));
     if (!r.ok) return json({ error: r.error_code === 403 ? "start_required" : "send_failed" }, 400);
     return json({ ok: true });
@@ -879,7 +908,7 @@ const handler = async (req) => {
     if (t.length < 2) return json({ error: "bad request" }, 400);
     const inbox = await getInbox(), now = Date.now();
     if (inbox.requests.filter((r) => r.userId === user.id && now - r.createdAt < 864e5).length >= 5) return json({ error: "limit" }, 429);
-    inbox.requests.unshift({ id: uid(), userId: user.id, name: user.first_name || "", username: user.username || "", text: t, status: "open", createdAt: now });
+    inbox.requests.unshift({ id: uid(), userId: user.id, name: user.first_name || "", username: user.username || "", text: t, lang: curLang(), status: "open", createdAt: now });
     inbox.requests = inbox.requests.slice(0, 300);
     await saveInbox(inbox);
     await notifyAdmins(`Nuova richiesta\n"${t}"\nda ${who(user)}`);
@@ -898,7 +927,7 @@ const handler = async (req) => {
     const inbox = await getInbox(), now = Date.now();
     if (inbox.reports.filter((r) => r.userId === user.id && now - r.createdAt < 864e5).length >= 10) return json({ error: "limit" }, 429);
     const n = String(note || "").trim().slice(0, 300);
-    inbox.reports.unshift({ id: uid(), userId: user.id, name: user.first_name || "", username: user.username || "", mediaId, title: m.title, episodeId: episodeId || "", episodeLabel: epLabel, reason, note: n, status: "open", createdAt: now });
+    inbox.reports.unshift({ id: uid(), userId: user.id, name: user.first_name || "", username: user.username || "", mediaId, title: m.title, episodeId: episodeId || "", episodeLabel: epLabel, reason, note: n, lang: curLang(), status: "open", createdAt: now });
     inbox.reports = inbox.reports.slice(0, 300);
     await saveInbox(inbox);
     await notifyAdmins(`Segnalazione: ${m.title}${epLabel ? " (" + epLabel + ")" : ""}\nMotivo: ${REASONS[reason]}${n ? "\nNota: " + n : ""}\nda ${who(user)}`);
@@ -924,7 +953,10 @@ const handler = async (req) => {
       const db = await getDb();
       return json({ ...db, lang: curLang(), features: { ...(db.features || {}), lang: await getLangFlag() } });
     }
-    if (b === "autolink" && req.method === "GET") return json(await getPending());
+    if (b === "autolink" && req.method === "GET") { // ogni catalogo vede i suoi post da collegare
+      const p = await getPending(), lg = curLang();
+      return json({ items: p.items.filter((x) => (x.lang || "it") === lg), recent: p.recent.filter((x) => (x.lang || "it") === lg) });
+    }
     if (b === "autolink-confirm" && req.method === "POST") {
       const { id, mediaId, episodeId, createFromTmdb } = await req.json();
       const p = await getPending(), it = p.items.find((x) => x.id === id);
@@ -933,7 +965,7 @@ const handler = async (req) => {
       const src = { link: it.link, channelId: it.channelId, messageId: it.messageId };
       if (createFromTmdb) { // crea la serie suggerita da TMDB e collega
         if (!it.tmdbSuggest || !it.create) return json({ error: "Nessun suggerimento TMDB" }, 400);
-        const t = await fetch(`https://api.themoviedb.org/3/tv/${it.tmdbSuggest.id}?api_key=${process.env.TMDB_API_KEY}&language=it-IT`).then((x) => x.json()).catch(() => null);
+        const t = await fetch(`https://api.themoviedb.org/3/tv/${it.tmdbSuggest.id}?api_key=${process.env.TMDB_API_KEY}&language=${TM()}`).then((x) => x.json()).catch(() => null);
         if (!t?.id) return json({ error: "TMDB non raggiungibile" }, 400);
         const r = await buildSeries(db, t, it.create);
         if (!r.mediaId || !r.episodeId) return json({ error: r.reason || "Impossibile creare" }, 400);
@@ -1079,7 +1111,7 @@ const handler = async (req) => {
       if (!it || !["open", "done"].includes(status)) return json({ error: "not_found" }, 404);
       const target = status === "done" && it.status !== "done" ? await getUser(it.userId).catch(() => ({})) : null;
       if (target && target.settings?.[kind === "report" ? "notifReport" : "notifRequest"] !== false)
-        await tg("sendMessage", { chat_id: it.userId, text: kind === "report" ? `Abbiamo risolto la segnalazione su "${it.title}". Grazie!` : `Il titolo che hai richiesto, "${it.text}", è stato aggiunto. Cercalo nell'app!` }).catch(() => {});
+        await tg("sendMessage", { chat_id: it.userId, text: it.lang === "en" ? (kind === "report" ? `We've resolved your report on "${it.title}". Thank you!` : `The title you requested, "${it.text}", has been added. Find it in the app!`) : kind === "report" ? `Abbiamo risolto la segnalazione su "${it.title}". Grazie!` : `Il titolo che hai richiesto, "${it.text}", è stato aggiunto. Cercalo nell'app!` }).catch(() => {});
       it.status = status;
       await saveInbox(inbox);
       return json({ ok: true });
@@ -1096,7 +1128,7 @@ const handler = async (req) => {
       const key = process.env.TMDB_API_KEY;
       if (!key) return json({ error: "TMDB non configurato" }, 400);
       const q = url.searchParams.get("q") || "";
-      const r = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${key}&language=it-IT&query=${encodeURIComponent(q)}`).then((x) => x.json());
+      const r = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${key}&language=${TM()}&query=${encodeURIComponent(q)}`).then((x) => x.json());
       const img = (p, w) => (p ? `https://image.tmdb.org/t/p/${w}${p}` : "");
       return json({
         results: (r.results || []).filter((x) => x.media_type === "movie" || x.media_type === "tv").slice(0, 8).map((x) => ({
@@ -1143,7 +1175,7 @@ const handler = async (req) => {
         }
         // ultimo tentativo: titolo italiano del primo risultato
         const R = sorted[0], type = typeOf(R), en = R.title || R.name;
-        const d = await tm(`${R.media_type}/${R.id}`, "it-IT");
+        const d = await tm(`${R.media_type}/${R.id}`, TM());
         const itTitle = d.title || d.name || "";
         out.tmdb = { id: R.id, type, title: en, it: itTitle, year: yr(R) || null };
         m = best(db.media.filter((x) => x.type === type && norm(x.title) === norm(itTitle)), yr(R) || y);
@@ -1234,15 +1266,15 @@ const handler = async (req) => {
           const r = (await tm(`search/${kind}`, lang, q)).results || [];
           return y ? [...r].sort((p, c) => Math.abs(yr(p) - y) - Math.abs(yr(c) - y)) : r;
         };
-        const hit = (await find("it-IT"))[0] || (await find("en-US"))[0];
+        const hit = (await find(TM()))[0] || (await find("en-US"))[0];
         if (!hit) return json({ error: "Titolo non trovato su TMDB: scrivi la durata a mano" }, 404);
         id = String(hit.id);
       }
       if (kind === "movie") {
-        const d = await tm(`movie/${encodeURIComponent(id)}`, "it-IT");
+        const d = await tm(`movie/${encodeURIComponent(id)}`, TM());
         return d.runtime ? json({ minutes: d.runtime, tmdbId: id }) : json({ error: "Durata non trovata" }, 404);
       }
-      const d = await tm(`tv/${encodeURIComponent(id)}`, "it-IT");
+      const d = await tm(`tv/${encodeURIComponent(id)}`, TM());
       const nums = (d.seasons || []).filter((x) => x.season_number > 0).map((x) => x.season_number);
       if (!nums.length) return json({ error: "Serie non trovata su TMDB" }, 404);
       const all = await Promise.all(nums.map((n) => tmdbSeasonEps(id, n)));
@@ -1261,7 +1293,7 @@ const handler = async (req) => {
       const todo = db.media.filter((m) => !full(m.releaseDate));
       const batch = todo.slice(0, 120); // se sono tanti, rilancia: continua dai rimanenti
       const updated = [], linked = [], failed = [], unsure = [];
-      const tmdb = (path, q = "") => fetch(`https://api.themoviedb.org/3/${path}?api_key=${key}&language=it-IT${q}`).then((x) => x.json()).catch(() => null);
+      const tmdb = (path, q = "") => fetch(`https://api.themoviedb.org/3/${path}?api_key=${key}&language=${TM()}${q}`).then((x) => x.json()).catch(() => null);
       const link = async (m) => { // trova il titolo su TMDB solo se la corrispondenza è sicura
         const kind = m.type === "series" ? "tv" : "movie";
         const my = yr(m.releaseDate) || yr(m.year), nt = norm(m.title);
@@ -1293,7 +1325,7 @@ const handler = async (req) => {
 
     // forza la ricerca degli anniversari di oggi (ignora il "già inviato oggi") e manda il risultato agli admin
     if (b === "anniv" && req.method === "POST") {
-      const r = await runAnniversaries({ store: store(), tg, admins: admins(), site: SITE, bot: process.env.BOT_USERNAME || BOT_USERNAME, force: true });
+      const r = await runAnniversaries({ store: store(), tg, admins: admins(), site: SITE, bot: process.env.BOT_USERNAME || BOT_USERNAME, force: true, lang: curLang() });
       return json({ ok: true, day: r.day, found: r.found });
     }
 

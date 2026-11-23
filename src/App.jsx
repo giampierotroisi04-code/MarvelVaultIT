@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, imgUrl, art, setLang } from "./api.js";
+import { api, imgUrl, art, setLang, getLang } from "./api.js";
 import { Logo, LangPick, BRAND } from "./Logos.jsx";
 import { descIds, byRelease } from "./lib/util.js";
 import { I } from "./Icons.jsx";
@@ -25,6 +25,7 @@ const kind = (m) => (m.type === "movie" ? "Film" : "Serie TV");
 // "In arrivo": lo decide l'admin; finisce da sola appena al titolo viene collegato un video
 const hasAnyVideo = (m) => !!m.hasVideo || (m.seasons || []).some((s) => s.episodes.some((e) => e.hasVideo));
 const isSoon = (m) => !!m.soon && !hasAnyVideo(m);
+const LOC = () => (getLang() === "en" ? "en-GB" : "it-IT"); // formato di date e numeri
 const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 const soonInfo = (m) => {
   const d = /^\d{4}-\d{2}-\d{2}$/.test(m.soonDate || "") ? new Date(m.soonDate + "T12:00:00") : null;
@@ -345,7 +346,7 @@ function Detail({ m, user, me, watch, toggle, say, rate, unlock, setSeen, initSe
   const share = () => {
     const link = me?.botUsername ? `https://t.me/${me.botUsername}${me.appName ? "/" + me.appName : ""}?startapp=t_${m.id}` : "";
     if (!link) return say("Link non disponibile");
-    const u = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(`Guarda ${m.title} su Marvel Italia Streaming`)}`;
+    const u = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(getLang() === "en" ? `Watch ${m.title} on Marvel English Streaming` : `Guarda ${m.title} su Marvel Italia Streaming`)}`;
     tg?.openTelegramLink ? tg.openTelegramLink(u) : window.open(u, "_blank");
   };
   const bg = art(m, "backdrop") || art(m, "poster");
@@ -363,7 +364,7 @@ function Detail({ m, user, me, watch, toggle, say, rate, unlock, setSeen, initSe
           {m.type === "series" && epsAll.length > 0 && <span className="pill">{epsAll.length} {epsAll.length === 1 ? "episodio" : "episodi"}</span>}
           {m.runtime > 0 && <span className="pill">{fmtMin(m.runtime)}{m.type === "series" ? " in totale" : ""}</span>}
           {m.rating && <span className="pill">★ {m.rating.avg.toFixed(1)}</span>}
-          {m.views > 0 && <span className="pill">{m.views.toLocaleString("it-IT")} {m.views === 1 ? "visione" : "visioni"}</span>}
+          {m.views > 0 && <span className="pill">{m.views.toLocaleString(LOC())} {m.views === 1 ? "visione" : "visioni"}</span>}
           {m.type === "movie" && seen(m.id) && <span className="pill ok"><I.Check size={12} /> Visto</span>}
         </div>
         <h1 className="dtitle">{m.title}</h1>
@@ -458,7 +459,7 @@ function MyRequests({ tick }) {
       {rows.map((r) => (
         <div className="mine" key={r.id}>
           <span className="help-ic"><r.Ic size={18} /></span>
-          <span className="help-tx"><b>{r.title}</b><small>{r.sub} · {new Date(r.at).toLocaleDateString("it-IT", { day: "numeric", month: "short" })}</small></span>
+          <span className="help-tx"><b>{r.title}</b><small>{r.sub} · {new Date(r.at).toLocaleDateString(LOC(), { day: "numeric", month: "short" })}</small></span>
           <span className={"st" + (r.done ? " ok" : "")}>{r.done ? r.ok : "In attesa"}</span>
         </div>
       ))}
@@ -576,6 +577,20 @@ function ProfilePage({ media, user, me, categories = [], coffee = null, features
                 </button>
               );
             })}
+            {me?.langOn && (
+              <>
+                <div className="set-h">Lingua</div>
+                <div className="chips" style={{ padding: "4px 16px 12px" }}>
+                  {[["it", "🇮🇹 Italiano"], ["en", "🇬🇧 English"]].map(([v, l]) => (
+                    <button key={v} className={"chip" + (getLang() === v ? " on" : "")} onClick={async () => {
+                      if (getLang() === v) return;
+                      try { await api("lang", { body: { lang: v } }); try { sessionStorage.removeItem("mv_adminlang"); } catch {} location.reload(); }
+                      catch { say("Error · Errore"); }
+                    }}>{l}</button>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="set-h">Generale</div>
             <button className="set-row" role="switch" aria-checked={vib} onClick={() => { setSetting("haptics", !vib); if (!vib) tg?.HapticFeedback?.impactOccurred?.("medium"); }}>
               <span className="help-tx"><b>Vibrazione</b><small>Un leggero feedback quando tocchi, voti o segni un titolo come visto.</small></span>
@@ -792,7 +807,7 @@ function DoomView({ media, doom = {}, user, go, watch, toggle, setSeen }) {
   const pct = totalAll ? Math.round(((totalAll - remaining) / totalAll) * 100) : 0;
   const doneCount = picks.filter((x) => x.done).length;
   const hh = (v) => v.toString().replace(".", ",");
-  const relLabel = new Date(rel).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
+  const relLabel = new Date(rel).toLocaleDateString(LOC(), { day: "numeric", month: "long", year: "numeric" });
 
   return (
     <div className="page dm">
@@ -875,11 +890,11 @@ function DoomView({ media, doom = {}, user, go, watch, toggle, setSeen }) {
           </section>
           {remaining === 0 ? <p className="dm-note">Hai già visto tutto: sei in pari per l'uscita.</p>
             : !fits ? <p className="dm-note warn">Con {hh(hpd || rec)} h al giorno non finisci entro il 15 dicembre: servono almeno {need.toFixed(1).replace(".", ",")} h al giorno.</p>
-            : <p className="dm-note">Finisci il {plan[plan.length - 1].date.toLocaleDateString("it-IT", { day: "numeric", month: "long" })}, prima dell'uscita.</p>}
+            : <p className="dm-note">Finisci il {plan[plan.length - 1].date.toLocaleDateString(LOC(), { day: "numeric", month: "long" })}, prima dell'uscita.</p>}
           <div className="dm-plan">
             {plan.map((p, i) => (
               <div key={i} className="dm-day">
-                <div className="dm-date"><b>{p.date.toLocaleDateString("it-IT", { day: "numeric" })}</b><small>{p.date.toLocaleDateString("it-IT", { weekday: "short", month: "short" })}</small></div>
+                <div className="dm-date"><b>{p.date.toLocaleDateString(LOC(), { day: "numeric" })}</b><small>{p.date.toLocaleDateString(LOC(), { weekday: "short", month: "short" })}</small></div>
                 <div className="dm-todo">{p.items.map((it, j) => <div key={j}><span>{it.title}{it.part ? " (parte)" : ""}</span><em>{fmtH(it.min)}</em></div>)}</div>
               </div>
             ))}
@@ -1008,7 +1023,11 @@ function Search({ media, go, user, say, watch }) {
 
 export default function App() {
   const [boot, setBoot] = useState({ loading: true });
-  const [stack, setStack] = useState([location.search.includes("admin=1") ? { n: "admin" } : { n: "home" }]);
+  const [stack, setStack] = useState(() => {
+    let open = location.search.includes("admin=1");
+    try { if (sessionStorage.getItem("mv_openadmin")) { open = true; sessionStorage.removeItem("mv_openadmin"); } } catch {}
+    return [open ? { n: "admin" } : { n: "home" }];
+  });
   const [toast, setToast] = useState("");
   const [splash, setSplash] = useState("in"); // "in" visibile · "out" in uscita · "" tolto
   const [splashMin, setSplashMin] = useState(false); // tempo minimo perché l'animazione si veda tutta
@@ -1026,6 +1045,7 @@ export default function App() {
       let l = me.langOn && me.lang ? me.lang : "it";
       if (me.isAdmin) { try { l = sessionStorage.getItem("mv_adminlang") || l; } catch {} } // l'admin può passare da un catalogo all'altro
       setLang(l);
+      try { document.documentElement.dataset.lang = l; localStorage.setItem("mv_splash", me.langOn && me.lang ? me.lang : "it"); } catch {}
       if (!me.subscribed) return setBoot({ me, lang: l, gate: true });
       const cat = await api("catalog");
       setBoot({ me, lang: l, ...cat });
@@ -1243,20 +1263,20 @@ export default function App() {
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;
   }
 
-  const sk = boot.pick ? "neutral" : boot.lang || "it"; // quale logo mostrare
+  // Logo dello splash: parte subito (italiano come sempre, o l'inglese se l'utente l'aveva scelto l'ultima volta),
+  // poi si adatta a ciò che risponde il server. Così chi non ha la versione inglese vede lo splash identico a prima.
+  let firstKind = "it";
+  try { if (localStorage.getItem("mv_splash") === "en") firstKind = "en"; } catch {}
+  const sk = boot.loading ? firstKind : boot.pick ? "neutral" : boot.lang || "it";
   const items = [["home", I.Home, "Home"], ["search", I.Search, "Cerca"], ...(features.timeline ? [["timeline", I.Clock, "Timeline"]] : []), ...(features.doom && Date.now() <= DOOM_OPEN_UNTIL ? [["doom", I.Mask, "Doomsday"]] : []), ["profile", I.User, "Profilo"], ...(me?.isAdmin ? [["admin", I.Shield, "Admin"]] : [])];
   return (
     <>
       {splash && (
-        <div className={"splash" + (splash === "out" ? " out" : "") + (boot.loading ? "" : " k-" + sk)} aria-hidden="true">
-          {!boot.loading && (
-            <>
-              <div className="splash-glow" />
-              <Logo kind={sk} />
-              <div className={"tri " + (sk === "it" ? "" : sk)} />
-              <p className="splash-tx">{BRAND[sk].full}</p>
-            </>
-          )}
+        <div className={"splash" + (splash === "out" ? " out" : "") + " k-" + sk} aria-hidden="true">
+          <div className="splash-glow" />
+          <Logo kind={sk} />
+          <div className={"tri " + (sk === "it" ? "" : sk)} />
+          <p className="splash-tx">{BRAND[sk].full}</p>
         </div>
       )}
       {!boot.error && !boot.gate && !boot.pick && <Header onSearch={() => tab({ n: "search" })} onBell={openBell} unread={unread} lang={boot.lang || "it"} />}

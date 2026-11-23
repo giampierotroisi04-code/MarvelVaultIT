@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, imgUrl, getLang, setLang } from "./api.js";
 import { I } from "./Icons.jsx";
+import { missingStrings } from "./i18n.js";
 import { parseLink, buildLink, flatTree, descIds, byRelease } from "./lib/util.js";
 
 const tg = window.Telegram?.WebApp;
@@ -331,6 +332,21 @@ function Stats() {
         {sub.state === "ok" && `Attiva su ${sub.channel}. Il controllo funziona.`}
         {sub.state === "error" && `Controllo non funzionante: ${sub.detail}. Aggiungi il bot come amministratore del canale ${sub.channel}.`}
       </div>
+    </div>
+  );
+}
+
+// ---------- Testi non tradotti (versione inglese) ----------
+// Mostra i testi italiani che l'app ha incontrato mentre la guardavi in inglese e che non hanno ancora una traduzione.
+function Missing() {
+  const [list, setList] = useState(missingStrings());
+  if (!list.length && !document.documentElement.dataset.lang) return null;
+  return (
+    <div className="box">
+      <b>Testi non tradotti</b>
+      <p className="hint">Passa al catalogo inglese, naviga l'app, poi tocca Aggiorna: qui compaiono i testi ancora in italiano. Mandameli e li aggiungo a src/i18n.js.</p>
+      <button className="btn small" onClick={() => setList(missingStrings())}>Aggiorna ({list.length})</button>
+      {list.length > 0 && <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 8, userSelect: "all" }}>{list.join("\n")}</pre>}
     </div>
   );
 }
@@ -920,8 +936,8 @@ export default function Admin({ say, onChange }) {
     if (l === lang) return;
     setLang(l); setL(l); setDb(null); setForm(null);
     try { sessionStorage.setItem("mv_adminlang", l); } catch {}
-    api("admin/catalog").then(setDb).catch(() => say("Accesso negato"));
-    onChange?.();
+    try { sessionStorage.setItem("mv_openadmin", "1"); } catch {}
+    location.reload(); // ricarica l'app nella lingua scelta e torna qui
   };
   const shown = (db?.media || []).filter((m) => matchQ(m, q)).sort((a, b) => b.createdAt - a.createdAt);
   const reload = () => api("admin/catalog").then((d) => { setDb(d); onChange?.(); });
@@ -946,7 +962,7 @@ export default function Admin({ say, onChange }) {
     if (tab === "cats") return <Cats cats={db.categories} media={db.media} reload={reload} />;
     if (tab === "stats") return <Stats />;
     if (tab === "credits") return <Credits say={say} />;
-    if (tab === "features") return <><Vis k="lang" label="Versione inglese (scelta lingua per tutti)" def="off" features={db.features} say={say} onDone={reload} /><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Vis k="coffee" label="Card BuyMeACoffee" def="off" features={db.features} say={say} onDone={reload} /><Coffee coffee={db.coffee} say={say} onDone={reload} /></>;
+    if (tab === "features") return <><Vis k="lang" label="Versione inglese (scelta lingua per tutti)" def="off" features={db.features} say={say} onDone={reload} /><Missing /><Vis k="stats" label="Statistiche personali" features={db.features} say={say} onDone={reload} /><Vis k="wrap" label="MCU Wrapped (lancio manuale)" def="off" features={db.features} say={say} onDone={reload} /><Vis k="coffee" label="Card BuyMeACoffee" def="off" features={db.features} say={say} onDone={reload} /><Coffee coffee={db.coffee} say={say} onDone={reload} /></>;
     if (tab === "titles") return <><Runtimes media={db.media} say={say} onDone={reload} /><TmdbDates say={say} onDone={reload} /></>;
     if (tab === "bot") return <><Backup say={say} /><Anniv say={say} /></>;
     if (tab === "timeline") return <><Vis k="timeline" features={db.features} say={say} onDone={reload} /><Timeline media={db.media} timeline={db.timeline} out={db.timelineOut} q={q} say={say} onDone={reload} /></>;

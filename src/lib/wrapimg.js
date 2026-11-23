@@ -1,6 +1,7 @@
 // Crea la "foto" del Wrapped (1920x1080) con un canvas, tutta sul telefono.
 // Sinistra: il profilo dell'utente. Destra: le statistiche. Grafica identica al sito (nero, riquadri scuri, tricolore, Bebas Neue).
 import { fmtHours, fmt1 } from "./stats.js";
+import { tr } from "../i18n.js";
 
 const W = 1920, H = 1080;
 const RED = "#E3161C", GREEN = "#009246", S1 = "#0e0e10", S2 = "#1a1a1d", BD = "rgba(255,255,255,.16)", MUTED = "#a8a8b3";
@@ -91,7 +92,7 @@ export async function makeWrapImage(o) {
 
     // intestazione: logo a sinistra, titolo a destra
     if (logo) { c.save(); c.beginPath(); c.arc(104, 98, 44, 0, Math.PI * 2); c.clip(); cover(c, logo, 60, 54, 88, 88); c.restore(); }
-    T(c, "Marvel Italia", 166, 96, { font: `800 38px ${INTER}` });
+    T(c, tr("Marvel Italia"), 166, 96, { font: `800 38px ${INTER}` });
     T(c, "STREAMING", 166, 130, { font: `700 20px ${INTER}`, color: RED, ls: 7 });
     c.font = `100px ${BEBAS}`;
     const yw = c.measureText(String(o.year)).width;
@@ -116,18 +117,18 @@ export async function makeWrapImage(o) {
     TF(c, o.name, cx, 530, 540, 46, 800, INTER, "#fff", "center");
     c.fillStyle = BD; c.fillRect(100, 566, 540, 2);
 
-    T(c, "IL TUO PREFERITO", 100, 620, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
+    T(c, tr("IL TUO PREFERITO"), 100, 620, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
     TF(c, s.best.length ? s.best[0].m.title.toUpperCase() : "—", 100, 685, 540, 68, 400, BEBAS, "#fff");
-    T(c, "PIÙ RIVISTO", 100, 745, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
+    T(c, tr("PIÙ RIVISTO"), 100, 745, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
     TF(c, s.top.length ? s.top[0].m.title.toUpperCase() : "—", 100, 810, 540, 68, 400, BEBAS, "#fff");
-    T(c, "STREAK ATTUALE", 100, 868, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
-    TF(c, `${s.streak} ${s.streak === 1 ? "GIORNO" : "GIORNI"}`, 100, 925, 540, 56, 400, BEBAS, "#fff");
+    T(c, tr("STREAK ATTUALE"), 100, 868, { font: `700 20px ${INTER}`, color: RED, ls: 5 });
+    TF(c, `${s.streak} ${s.streak === 1 ? tr("GIORNO") : tr("GIORNI")}`, 100, 925, 540, 56, 400, BEBAS, "#fff");
 
     // ---------- DESTRA: le statistiche ----------
     panel(c, 720, 180, 1140, 790);
-    T(c, "ORE VISTE", 770, 248, { font: `700 22px ${INTER}`, color: MUTED, ls: 6 });
+    T(c, tr("ORE VISTE"), 770, 248, { font: `700 22px ${INTER}`, color: MUTED, ls: 6 });
     TF(c, fmtHours(s.minutes), 770, 440, 600, 230, 400, BEBAS, "#fff");
-    const sub = s.endgames >= 0.1 ? `= ${fmt1(s.endgames)} maratone di Avengers: Endgame` : `${s.views} ${s.views === 1 ? "visione" : "visioni"} in totale`;
+    const sub = s.endgames >= 0.1 ? `= ${fmt1(s.endgames)} ${tr("maratone di Avengers: Endgame")}` : `${s.views} ${s.views === 1 ? tr("visione") : tr("visioni")} ${tr("in totale")}`;
     TF(c, sub, 770, 495, 600, 30, 600, INTER, "#d4d4dc");
 
     // film e serie visti (a destra delle ore)
@@ -140,8 +141,8 @@ export async function makeWrapImage(o) {
     const tiles = [
       [String(s.seen), "progetti visti"],
       [`${s.bestStreak} ${s.bestStreak === 1 ? "giorno" : "giorni"}`, "streak record"],
-      [`${s.pct}%`, "catalogo completato"],
-      [s.ratedCount ? `${s.avg}/5` : "—", "media dei tuoi voti"],
+      [`${s.pct}%`, tr("catalogo completato")],
+      [s.ratedCount ? `${s.avg}/5` : "—", tr("media dei tuoi voti")],
       [String(s.views), "visioni totali"],
       [String(s.activeDays), "giorni attivi"],
     ];
