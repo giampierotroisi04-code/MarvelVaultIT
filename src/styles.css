@@ -544,7 +544,7 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 .splash .lg{aspect-ratio:1}
 .splash.k-en .splash-glow{background:radial-gradient(circle at 30% 40%,rgba(11,42,130,.5),transparent 26%),radial-gradient(circle at 70% 40%,rgba(11,42,130,.5),transparent 26%),radial-gradient(circle at 50% 12%,rgba(228,0,43,.22),transparent 24%)}
 .splash.k-neutral .splash-glow{background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.09),transparent 34%)}
-.tri.en{background:linear-gradient(90deg,#0B2A82 0 30%,#F2F2F2 30% 37.5%,#E4002B 37.5% 62.5%,#F2F2F2 62.5% 70%,#0B2A82 70%)} /* come l'anello del logo inglese: blu · bianco · rosso · bianco · blu */
+.tri.en{background:var(--tri-en)}
 .tri.neutral{background:linear-gradient(90deg,#3a3a3e,#9a9aa3)}
 .langpick{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
 .langpick .lg{width:48vw;max-width:220px;margin-bottom:8px}
@@ -555,4 +555,7 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 
 /* barre colorate (intestazione, copertine, menu in basso, splash): italiano = tricolore, inglese = come l'anello del logo */
 :root{--tri:linear-gradient(90deg,var(--green) 33.3%,#fff 33.3% 66.6%,var(--red) 66.6%)}
-:root[data-lang="en"]{--tri:linear-gradient(90deg,#0B2A82 0 30%,#F2F2F2 30% 37.5%,#E4002B 37.5% 62.5%,#F2F2F2 62.5% 70%,#0B2A82 70%)}
+:root[data-lang="en"]{--tri:var(--tri-en)}
+:root[data-lang="en"] .st-bar i{background:var(--tri-en)}
+/* inglese: come una fetta del Union Jack, la stessa dell'anello del logo (blu · bande bianco-rosso-bianco · blu) */
+:root{--tri-en:linear-gradient(90deg,#0B2A82 0 14%,#F2F2F2 14% 16.5%,#E4002B 16.5% 19%,#F2F2F2 19% 21.5%,#0B2A82 21.5% 36%,#F2F2F2 36% 42%,#E4002B 42% 58%,#F2F2F2 58% 64%,#0B2A82 64% 78.5%,#F2F2F2 78.5% 81%,#E4002B 81% 83.5%,#F2F2F2 83.5% 86%,#0B2A82 86%)}

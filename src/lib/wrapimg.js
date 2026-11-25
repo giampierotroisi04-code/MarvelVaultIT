@@ -2,8 +2,21 @@
 // Sinistra: il profilo dell'utente. Destra: le statistiche. Grafica identica al sito (nero, riquadri scuri, tricolore, Bebas Neue).
 import { fmtHours, fmt1 } from "./stats.js";
 import { tr } from "../i18n.js";
+import { getLang } from "../api.js";
 
 const W = 1920, H = 1080;
+
+// Inglese: stile Union Jack come l'anello del logo (blu, con bande bianco-rosso-bianco)
+const BLUE = "#0B2A82", WHITE = "#F2F2F2";
+const UNION = [[0, 14, BLUE], [14, 16.5, WHITE], [16.5, 19, "#E4002B"], [19, 21.5, WHITE], [21.5, 36, BLUE], [36, 42, WHITE], [42, 58, "#E4002B"], [58, 64, WHITE], [64, 78.5, BLUE], [78.5, 81, WHITE], [81, 83.5, "#E4002B"], [83.5, 86, WHITE], [86, 100, BLUE]];
+function unionRing(c, cx, cy, r) {
+  const arc = (a, w, col) => { c.beginPath(); c.arc(cx, cy, r, a - w, a + w); c.lineWidth = 8; c.lineCap = "butt"; c.strokeStyle = col; c.stroke(); };
+  arc(0, Math.PI, BLUE);
+  for (let k = 0; k < 8; k++) {
+    const a = -Math.PI / 2 + (k * Math.PI) / 4;
+    if (k % 2 === 0) { arc(a, 0.2, WHITE); arc(a, 0.11, "#E4002B"); } else { arc(a, 0.1, WHITE); arc(a, 0.045, "#E4002B"); }
+  }
+}
 const RED = "#E3161C", GREEN = "#009246", S1 = "#0e0e10", S2 = "#1a1a1d", BD = "rgba(255,255,255,.16)", MUTED = "#a8a8b3";
 const BEBAS = '"Bebas Neue", Impact, sans-serif';
 const INTER = "Inter, system-ui, sans-serif";
@@ -85,9 +98,12 @@ export async function makeWrapImage(o) {
 
     // tricolore in alto e in basso
     for (const y of [0, H - 12]) {
-      c.fillStyle = GREEN; c.fillRect(0, y, W / 3, 12);
-      c.fillStyle = "#fff"; c.fillRect(W / 3, y, W / 3, 12);
-      c.fillStyle = RED; c.fillRect((W / 3) * 2, y, W / 3, 12);
+      if (getLang() === "en") UNION.forEach(([a, b, col]) => { c.fillStyle = col; c.fillRect((W * a) / 100, y, (W * (b - a)) / 100, 12); });
+      else {
+        c.fillStyle = GREEN; c.fillRect(0, y, W / 3, 12);
+        c.fillStyle = "#fff"; c.fillRect(W / 3, y, W / 3, 12);
+        c.fillStyle = RED; c.fillRect((W / 3) * 2, y, W / 3, 12);
+      }
     }
 
     // intestazione: logo a sinistra, titolo a destra
@@ -102,7 +118,8 @@ export async function makeWrapImage(o) {
     // ---------- SINISTRA: l'utente ----------
     panel(c, 60, 180, 620, 790);
     const cx = 370, cy = 345;
-    [GREEN, "#fff", RED].forEach((col, i) => {
+    if (getLang() === "en") unionRing(c, cx, cy, 128);
+    else [GREEN, "#fff", RED].forEach((col, i) => {
       const a0 = -Math.PI / 2 + (i * 2 * Math.PI) / 3 + 0.07;
       c.beginPath(); c.arc(cx, cy, 128, a0, a0 + (2 * Math.PI) / 3 - 0.14);
       c.lineWidth = 8; c.lineCap = "round"; c.strokeStyle = col; c.stroke();
