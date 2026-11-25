@@ -542,13 +542,13 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 
 /* versione inglese / scelta lingua */
 .splash .lg{aspect-ratio:1}
-.splash.k-en .splash-glow{background:radial-gradient(circle at 38% 42%,rgba(1,33,105,.5),transparent 28%),radial-gradient(circle at 62% 58%,rgba(200,16,46,.22),transparent 28%)}
+.splash.k-en .splash-glow{background:radial-gradient(circle at 30% 40%,rgba(11,42,130,.5),transparent 26%),radial-gradient(circle at 70% 40%,rgba(11,42,130,.5),transparent 26%),radial-gradient(circle at 50% 12%,rgba(228,0,43,.22),transparent 24%)}
 .splash.k-neutral .splash-glow{background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.09),transparent 34%)}
-.tri.en{background:linear-gradient(90deg,#012169 33.3%,#fff 33.3% 66.6%,#C8102E 66.6%)}
+.tri.en{background:linear-gradient(90deg,#0B2A82 0 30%,#F2F2F2 30% 37.5%,#E4002B 37.5% 62.5%,#F2F2F2 62.5% 70%,#0B2A82 70%)} /* come l'anello del logo inglese: blu · bianco · rosso · bianco · blu */
 .tri.neutral{background:linear-gradient(90deg,#3a3a3e,#9a9aa3)}
 .langpick{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
 .langpick .lg{width:48vw;max-width:220px;margin-bottom:8px}
 .langpick h1{font-size:22px}
 .langpick p{color:var(--tx2);font-size:14px;margin-bottom:6px}
 .langpick .btn{width:100%;max-width:320px;justify-content:center;font-size:17px;padding:14px}
-:root[data-lang="en"]{--green:#3D63F0}
+:root[data-lang="en"]{--green:#2E57C8}

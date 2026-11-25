@@ -425,15 +425,18 @@ async function tmdbSeasonEps(id, n) {
   const key = process.env.TMDB_API_KEY;
   if (!key || !id) return null;
   const get = (l) => fetch(`https://api.themoviedb.org/3/tv/${encodeURIComponent(id)}/season/${encodeURIComponent(n)}?api_key=${key}&language=${l}`).then((x) => x.json()).catch(() => ({}));
-  const [it, en] = await Promise.all([get("it-IT"), get("en-US")]);
-  if (!it.episodes && !en.episodes) return null;
-  const enBy = new Map((en.episodes || []).map((e) => [e.episode_number, e]));
-  return (it.episodes || en.episodes).map((e) => {
-    const f = enBy.get(e.episode_number) || {};
+  // Catalogo italiano: dati in italiano, con ripiego sull'inglese se manca qualcosa.
+  // Catalogo inglese: solo dati in inglese (mai ripiego sull'italiano).
+  const isEn = curLang() === "en";
+  const [main, alt] = await Promise.all([get(isEn ? "en-US" : "it-IT"), isEn ? Promise.resolve({}) : get("en-US")]);
+  if (!main.episodes && !alt.episodes) return null;
+  const altBy = new Map((alt.episodes || []).map((e) => [e.episode_number, e]));
+  return (main.episodes || alt.episodes).map((e) => {
+    const f = altBy.get(e.episode_number) || {};
     return {
       number: e.episode_number,
       title: e.name || f.name || "",
-      overview: e.overview || f.overview || "", // fallback in inglese se manca in italiano
+      overview: e.overview || f.overview || "", // ripiego sull'inglese se manca in italiano (solo catalogo italiano)
       coverUrl: e.still_path || f.still_path ? `https://image.tmdb.org/t/p/w780${e.still_path || f.still_path}` : "",
       airDate: e.air_date || "",
       runtime: e.runtime || f.runtime || 0,
