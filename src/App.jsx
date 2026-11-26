@@ -705,7 +705,7 @@ function useSeenPicker(user, toggle, setSeen, theme = "") {
 }
 
 // ---------- TIMELINE MARVEL (stile monitor TVA) ----------
-function TimelineView({ media, timeline = [], out = [], user, go, toggle, setSeen }) {
+function TimelineView({ media, timeline = [], out = [], user, go, toggle, setSeen, showNew = false }) {
   const [mode, setMode] = useState("story");
   const { markSeen, markSeason, picker } = useSeenPicker(user, toggle, setSeen, "tva");
   const rel = byRelease("asc");
@@ -756,7 +756,7 @@ function TimelineView({ media, timeline = [], out = [], user, go, toggle, setSee
                     <em>{seen ? "▣ OSSERVATO" : "▢ NON OSSERVATO"}</em>
                   </span>
                 </button>
-                <button className={"tchk" + (seen ? " ok" : "")} onClick={() => (s ? markSeason(m, s, seen) : markSeen(m, seen))}>{seen ? "✓ Visto" : "Segna visto"}</button>
+                {showNew && <button className={"tchk" + (seen ? " ok" : "")} onClick={() => (s ? markSeason(m, s, seen) : markSeen(m, seen))}>{seen ? "✓ Visto" : "Segna visto"}</button>}
               </div>
               <span className="tdot" />
             </div>
@@ -961,7 +961,7 @@ function Continue({ recent = [], media, watch, go, watched = [], onRemove }) {
           <div key={key} className="ccard">
             <div className="cwrap">
               <div className="cimg" style={{ backgroundImage: `url(${(ep && (ep.cover ? imgUrl(ep.cover) : ep.coverUrl)) || art(m, "backdrop") || art(m, "poster")})` }} onClick={() => go({ n: "media", id: m.id })} />
-              <button className="cx" aria-label="Rimuovi da Continua a guardare" onClick={() => setAsk(m)}><I.X size={14} /></button>
+              {onRemove && <button className="cx" aria-label="Rimuovi da Continua a guardare" onClick={() => setAsk(m)}><I.X size={14} /></button>}
             </div>
             <b className="ct">{m.title}</b>
             <small>{ep ? `S${ep.sn} · E${ep.number}${ep.title ? " · " + ep.title : ""}` : "Film"}</small>
@@ -1271,7 +1271,7 @@ export default function App() {
           )}
           <div className="page">
             {/* ordine: in evidenza (sopra) · continua a guardare · più visti · ultime uscite · in arrivo · esplora */}
-            <Continue recent={user.recent} watched={user.watched} media={media} watch={watch} go={go} onRemove={removeRecent} />
+            <Continue recent={user.recent} watched={user.watched} media={media} watch={watch} go={go} onRemove={features.novita ? removeRecent : undefined} />
             <TopRail items={(boot.trending || []).map((id) => media.find((m) => m.id === id)).filter((m) => m && !isSoon(m)).slice(0, 10)} go={go} user={user} />
             <Rail title="Ultime uscite" items={avail.slice(0, 12)} go={go} user={user} />
             {soonList.length > 0 && (
@@ -1309,7 +1309,7 @@ export default function App() {
         </div>
       );
     } else if (view.n === "search") body = <Search media={media} go={go} user={user} say={say} watch={watch} />;
-    else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} toggle={toggle} setSeen={setSeen} />;
+    else if (view.n === "timeline" && features.timeline) body = <TimelineView media={media} timeline={timeline} out={timelineOut} user={user} go={go} toggle={toggle} setSeen={setSeen} showNew={!!features.novita} />;
     else if (view.n === "doom" && features.doom && Date.now() <= DOOM_OPEN_UNTIL) body = <DoomView media={media} doom={doomsday} user={user} go={go} watch={watch} toggle={toggle} setSeen={setSeen} />;
     else if (view.n === "profile" || view.n === "list" || view.n === "stats") body = <ProfilePage media={media} user={user} me={me} categories={categories} coffee={coffee} features={features} go={go} say={say} setSetting={setSetting} />;
     else if (view.n === "admin" && me?.isAdmin) body = <Admin say={say} onChange={load} />;

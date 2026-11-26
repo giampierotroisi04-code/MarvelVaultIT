@@ -741,7 +741,7 @@ const handler = async (req) => {
     const db = await getDb();
     const rt = (await store().get("ratings", { type: "json" })) || {};
     const st = await getStats().catch(() => ({ media: {} }));
-    const feats = Object.fromEntries(["timeline", "doom", "stats", "wrap", "coffee"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" || k === "coffee" ? "off" : "admin"); return [k, k === "stats" || k === "doom" || v === "all" || (v === "admin" && isAdmin)]; })); // statistiche e Doomsday sono sempre pubbliche
+    const feats = Object.fromEntries(["timeline", "doom", "stats", "wrap", "coffee", "novita"].map((k) => { const v = db.features?.[k] ?? (k === "wrap" || k === "coffee" ? "off" : "admin"); return [k, k === "stats" || k === "doom" || v === "all" || (v === "admin" && isAdmin)]; })); // statistiche e Doomsday sono sempre pubbliche
     return json({
       media: db.media.filter((m) => m.visible !== false).map((m) => ({ ...pub(m), player: playerView(m, isAdmin), views: st.media?.[m.id]?.s || 0, rating: rt[m.id]?.count ? { avg: Math.round((rt[m.id].sum / rt[m.id].count) * 10) / 10, count: rt[m.id].count } : null })),
       categories: db.categories.filter((x) => x.visible !== false),
@@ -1205,7 +1205,7 @@ const handler = async (req) => {
         await store().setJSON("lang:flag", { value });
         return json({ ok: true });
       }
-      if (!["timeline", "doom", "stats", "wrap", "coffee"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
+      if (!["timeline", "doom", "stats", "wrap", "coffee", "novita"].includes(key) || !["off", "admin", "all"].includes(value)) return json({ error: "bad request" }, 400);
       const db = await getDb();
       db.features = { ...(db.features || {}), [key]: value };
       await saveDb(db);
