@@ -830,6 +830,16 @@ const handler = async (req) => {
     return json({ ok: true });
   }
 
+  // toglie un titolo da "Continua a guardare" (non tocca i titoli segnati come visti)
+  if (a === "recent-remove" && req.method === "POST") {
+    const { mediaId } = await req.json();
+    if (!mediaId || String(mediaId).length > 64) return json({ error: "bad request" }, 400);
+    const u = await getUser(user.id);
+    u.recent = (u.recent || []).filter((x) => x.mediaId !== mediaId);
+    await store().setJSON(`user:${user.id}`, u);
+    return json({ ok: true });
+  }
+
   if (a === "toggle" && req.method === "POST") {
     const { kind, id } = await req.json();
     if (!["watchlist", "watched"].includes(kind) || !id) return json({ error: "bad request" }, 400);

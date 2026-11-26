@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, imgUrl, getLang, setLang } from "./api.js";
 import { I } from "./Icons.jsx";
 import { missingStrings } from "./i18n.js";
@@ -559,6 +559,109 @@ function ImportList({ media, onApply, hint = "Incolla un titolo per riga, nell'o
   );
 }
 
+// ---------- Esporta / importa la timeline (per passare da un catalogo all'altro: IT ⇄ EN) ----------
+// Ogni voce porta l'id TMDB (uguale nei due cataloghi), titolo e anno come ripiego, il numero stagione se è una stagione singola
+// e il flag "escluso". All'importazione si riabbina al catalogo della lingua scelta in quel momento.
+const TL_TAG = "MVT1:";
+const tlB64 = (str) => { let x = ""; new TextEncoder().encode(str).forEach((c) => { x += String.fromCharCode(c); }); return btoa(x); };
+const tlUnB64 = (str) => new TextDecoder().decode(Uint8Array.from(atob(str), (c) => c.charCodeAt(0)));
+
+function TimelineCode({ media, ids, out, onApply, say }) {
+  const by = Object.fromEntries(media.map((m) => [m.id, m]));
+  const [txt, setTxt] = useState("");
+  const [rows, setRows] = useState(null);
+  const [links, setLinks] = useState({});
+  const [err, setErr] = useState("");
+  const outRef = useRef(null);
+
+  const items = ids.map((k) => {
+    const [mid, sid] = k.split("~"), m = by[mid], s = sid ? m?.seasons?.find((x) => x.id === sid) : null;
+    if (!m || (sid && !s)) return null;
+    return { i: m.tmdbId || undefined, t: m.title, y: m.year || undefined, k: m.type === "series" ? "s" : "m", n: s ? s.number : undefined, o: out.includes(k) ? 1 : undefined };
+  }).filter(Boolean);
+  const code = TL_TAG + tlB64(JSON.stringify({ v: 1, a: items }));
+  const copy = async () => {
+    let ok = false;
+    try { await navigator.clipboard.writeText(code); ok = true; } catch {}
+    if (!ok) { try { outRef.current?.select(); ok = document.execCommand("copy"); } catch {} }
+    say(ok ? "Codice copiato" : "Copia non riuscita: tieni premuto sul codice e copialo a mano");
+  };
+
+  const kindOf = (m) => (m.type === "series" ? "s" : "m");
+  const analyze = () => {
+    setErr(""); setLinks({});
+    let data;
+    try {
+      const t = txt.trim(), i = t.indexOf(TL_TAG);
+      if (i < 0) throw 0;
+      data = JSON.parse(tlUnB64(t.slice(i + TL_TAG.length).replace(/[^A-Za-z0-9+/=]/g, "")));
+    } catch { setRows(null); return setErr("Codice non valido: incolla il codice esportato dalla timeline."); }
+    if (data?.v !== 1 || !Array.isArray(data.a)) { setRows(null); return setErr("Codice non valido: incolla il codice esportato dalla timeline."); }
+    const byTmdb = new Map(), byTitle = new Map();
+    for (const m of media) {
+      if (m.tmdbId) byTmdb.set(kindOf(m) + m.tmdbId, m);
+      byTitle.set(kindOf(m) + "|" + nz(m.title) + "|" + (m.year || ""), m);
+      if (!byTitle.has(kindOf(m) + "|" + nz(m.title))) byTitle.set(kindOf(m) + "|" + nz(m.title), m);
+    }
+    setRows(data.a.map((it) => ({
+      it,
+      m: (it.i && byTmdb.get(it.k + it.i)) || byTitle.get(it.k + "|" + nz(it.t) + "|" + (it.y || "")) || byTitle.get(it.k + "|" + nz(it.t)) || null,
+    })));
+  };
+  // chiave finale della voce nel catalogo attuale (titolo intero oppure "mediaId~seasonId")
+  const keyOf = (r, i) => {
+    const m = by[links[i]] || r.m;
+    if (!m) return null;
+    if (r.it.n == null) return m.id;
+    const s = (m.seasons || []).find((x) => x.number === r.it.n);
+    return s ? `${m.id}~${s.id}` : null;
+  };
+  const keys = rows ? rows.map(keyOf) : [];
+  const okN = keys.filter(Boolean).length;
+  const missing = rows ? rows.map((r, i) => ({ r, i })).filter(({ i }) => !keys[i]) : [];
+  const sorted = [...media].sort((a, b) => a.title.localeCompare(b.title));
+  const label = (it) => `${it.t}${it.y ? ` (${it.y})` : ""}${it.n != null ? ` · stagione ${it.n}` : ""}`;
+  const apply = () => {
+    const seen = new Set(), list = [], outKeys = [];
+    rows.forEach((r, i) => { const k = keys[i]; if (!k || seen.has(k)) return; seen.add(k); list.push(k); if (r.it.o) outKeys.push(k); });
+    onApply(list, outKeys);
+  };
+  return (
+    <div className="box">
+      <b>Esporta timeline</b>
+      <p className="hint">Copia questo codice, cambia catalogo (Profilo → Lingua), apri Timeline e incollalo in "Importa codice": le voci si ricollegano da sole al catalogo di quella lingua, nello stesso ordine, comprese le stagioni singole e le voci escluse.</p>
+      <textarea ref={outRef} className="in" rows={3} readOnly value={code} onFocus={(e) => e.target.select()} />
+      <button className="btn red small" disabled={!items.length} onClick={copy}>Copia codice ({items.length} voci)</button>
+      <b style={{ marginTop: 14, display: "block" }}>Importa codice</b>
+      <textarea className="in" rows={3} value={txt} onChange={(e) => { setTxt(e.target.value); setRows(null); setErr(""); }} placeholder="Incolla qui il codice" />
+      <button className="btn small" disabled={txt.trim().length < 6} onClick={analyze}>Analizza</button>
+      {err && <p className="hint">{err}</p>}
+      {rows && (
+        <>
+          <p className="hint">Abbinate {okN} voci su {rows.length}.</p>
+          {missing.length > 0 && (
+            <>
+              <b>Non trovate ({missing.length})</b>
+              {missing.map(({ r, i }) => (
+                <div className="item" key={i}>
+                  <b>{label(r.it)}</b>
+                  <select className="in" value="" onChange={(e) => setLinks({ ...links, [i]: e.target.value })}>
+                    <option value="">Collega a un titolo già presente…</option>
+                    {sorted.map((m) => <option key={m.id} value={m.id}>{m.title}{m.year ? ` (${m.year})` : ""}</option>)}
+                  </select>
+                  {r.m && r.it.n != null && <small>La serie c'è, ma non ha la stagione {r.it.n}.</small>}
+                </div>
+              ))}
+              <p className="hint">Le voci non trovate restano fuori dall'ordine: aggiungile al catalogo e rilancia l'import, oppure collegale a mano qui sopra.</p>
+            </>
+          )}
+          <button className="btn red" disabled={!okN} onClick={apply}><I.Check size={16} /> Applica ordine ({okN} voci)</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- Ordine cronologico ----------
 // Una voce è un titolo intero ("mediaId") oppure una singola stagione di una serie ("mediaId~seasonId")
 function Timeline({ media, timeline = [], out: outInit = [], q = "", say, onDone }) {
@@ -571,10 +674,18 @@ function Timeline({ media, timeline = [], out: outInit = [], q = "", say, onDone
   const [ids, setIds] = useState(() => [...media.map((m) => m.id), ...timeline.filter((k) => k.includes("~") && valid(k))].sort((a, b) => (pos(a) === pos(b) ? rel(mOf(a), mOf(b)) : pos(a) - pos(b))));
   const [dirty, setDirty] = useState(false);
   const [imp, setImp] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
   const [pickM, setPickM] = useState("");
   const [pickS, setPickS] = useState("");
   const applyList = (listed) => { const set = new Set(listed); setIds([...listed, ...ids.filter((x) => !set.has(x))]); setDirty(true); setImp(false); say("Ordine applicato: premi Salva ordine"); };
   const [out, setOut] = useState(outInit);
+  const applyCode = (keys, outKeys) => {
+    const set = new Set(keys);
+    setIds([...keys, ...ids.filter((x) => !set.has(x))]);
+    setOut([...out.filter((x) => !set.has(x)), ...outKeys]);
+    setDirty(true); setCodeOpen(false);
+    say("Timeline importata: controlla e premi Salva ordine");
+  };
   const toggleOut = (id) => { setOut(out.includes(id) ? out.filter((x) => x !== id) : [...out, id]); setDirty(true); };
   const move = (i, j) => {
     if (j < 0 || j >= ids.length || i === j) return;
@@ -602,7 +713,9 @@ function Timeline({ media, timeline = [], out: outInit = [], q = "", say, onDone
       <p className="hint">Ordine cronologico (storia) della TIMELINE MARVEL: frecce, oppure scrivi la posizione e premi invio. Con "Escludi" una voce sparisce dalla timeline (sia cronologica sia di uscita). Per una serie puoi anche inserire una <b>singola stagione</b> in un punto preciso (es. Daredevil stagione 2): aggiungila qui sotto, poi escludi il titolo intero se non lo vuoi. Poi salva.</p>
       <button className="btn red small" disabled={!dirty} onClick={save}>Salva ordine</button>
       <button className="btn small" style={{ marginLeft: 8 }} onClick={() => setImp(!imp)}><I.Plus size={16} /> Importa lista</button>
+      <button className="btn small" style={{ marginLeft: 8 }} onClick={() => setCodeOpen(!codeOpen)}>⇅ Esporta / importa timeline</button>
       {imp && <ImportList media={media} onApply={applyList} />}
+      {codeOpen && <TimelineCode media={media} ids={ids} out={out} onApply={applyCode} say={say} />}
       <div className="box">
         <b>Aggiungi una stagione</b>
         <select className="in" value={pickM} onChange={(e) => { setPickM(e.target.value); setPickS(""); }}>
