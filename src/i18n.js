@@ -298,7 +298,12 @@ const D = new Map(Object.entries({
 "Nessun voto: più riservato di Wakanda prima del 2018.": "No ratings: more secretive than Wakanda before 2018.",
 "Voti altissimi: per te è tutto un capolavoro. Tony Stark ti vuole nel marketing.": "Sky-high ratings: to you everything is a masterpiece. Tony Stark wants you in marketing.",
 "Voti bassissimi: Nick Fury ti vuole come critico ufficiale.": "Rock-bottom ratings: Nick Fury wants you as the official critic.",
-"Giudizio equilibrato: né Thor in estasi né Fury sospettoso.": "Balanced judgment: neither Thor in ecstasy nor a suspicious Fury."
+"Giudizio equilibrato: né Thor in estasi né Fury sospettoso.": "Balanced judgment: neither Thor in ecstasy nor a suspicious Fury.",
+"Rimuovi da Continua a guardare": "Remove from Continue watching",
+"Vuoi togliere questo titolo da «Continua a guardare»? I titoli che hai segnato come visti non cambiano.": "Do you want to remove this title from “Continue watching”? Titles you marked as watched stay as they are.",
+"Sì": "Yes",
+"No": "No",
+"Operazione non riuscita": "Something went wrong",
 }));
 
 const MON = { gen: "Jan", feb: "Feb", mar: "Mar", apr: "Apr", mag: "May", giu: "Jun", lug: "Jul", ago: "Aug", set: "Sep", ott: "Oct", nov: "Nov", dic: "Dec" };

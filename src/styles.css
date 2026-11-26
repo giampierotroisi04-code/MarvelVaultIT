@@ -559,3 +559,20 @@ h2.sub{font-size:21px;border-left:4px solid var(--red);padding-left:8px;margin:2
 :root[data-lang="en"] .st-bar i{background:var(--tri-en)}
 /* inglese: come una fetta del Union Jack, la stessa dell'anello del logo (blu · bande bianco-rosso-bianco · blu) */
 :root{--tri-en:linear-gradient(90deg,#0B2A82 0 14%,#F2F2F2 14% 16.5%,#E4002B 16.5% 19%,#F2F2F2 19% 21.5%,#0B2A82 21.5% 36%,#F2F2F2 36% 42%,#E4002B 42% 58%,#F2F2F2 58% 64%,#0B2A82 64% 78.5%,#F2F2F2 78.5% 81%,#E4002B 81% 83.5%,#F2F2F2 83.5% 86%,#0B2A82 86%)}
+
+/* ===== Continua a guardare: rimozione ===== */
+.cwrap{position:relative}
+.cx{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;border:1px solid rgba(255,255,255,.55);background:rgba(0,0,0,.68);color:#fff;display:grid;place-items:center;cursor:pointer;padding:0}
+.cx:active{transform:scale(.92)}
+.confirm-act{display:flex;gap:10px;margin-top:4px}
+.confirm-act .btn{flex:1}
+
+/* ===== Timeline: segna visto + esporta/importa ===== */
+.tcol{display:flex;flex-direction:column;gap:5px;width:100%;min-width:0}
+.tchk{align-self:flex-end;background:transparent;border:1px solid var(--dim);color:var(--am2);padding:5px 10px;border-radius:4px;font:700 10px "Courier New",monospace;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.tchk.ok{background:var(--am);color:#1a0d02;border-color:var(--am);box-shadow:0 0 10px rgba(255,157,46,.45)}
+.dm.dm-ov.dm-tva{--ac:#ff9d2e;--ac2:#d97f12;--glow:rgba(255,157,46,.45);--bd:rgba(255,157,46,.28);--mu:#c9a578}
+.dm-tva .dm-sheet{background:linear-gradient(180deg,#1a0d02,#0a0501);border-color:rgba(255,157,46,.5);box-shadow:0 0 40px rgba(255,157,46,.2),0 20px 50px rgba(0,0,0,.6)}
+.dm-tva .dm-sheet>b{color:#ffe7c7}
+.dm-tva .dm-btn{color:#1a0d02}
+.dm-tva .dm-seas button.on{box-shadow:0 0 14px rgba(255,157,46,.2)}
